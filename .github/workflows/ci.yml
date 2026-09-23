@@ -1,0 +1,117 @@
+# Two lanes, split on one question: does it need the network?
+#
+# `check` needs nothing but the repository. It runs on every push and every pull request, and it is
+# the gate. `evidence` re-fetches GLEIF and rebuilds the corpus from scratch, which is how kill
+# criterion D -- "a rebuild changes any label" -- is actually tested rather than asserted; it runs
+# weekly and on demand, because a required check that depends on somebody else's API goes red for
+# reasons nobody in the pull request caused.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 4 * * 1"   # Mondays, 04:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: lint, types, tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --frozen --dev
+
+      - name: Lint
+        run: uv run ruff check . && uv run ruff format --check .
+
+      - name: Types
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run python -m pytest
+
+      # The guards are the load-bearing part of this repository, and a guard that cannot fail is
+      # not a guard. This plants a real defect into each one and fails the build if the suite
+      # stays green. Project 3 and project 4 both shipped a guard that could not fail; this is the
+      # check that catches it before a reviewer has to.
+      - name: Planted breaches
+        run: uv run python scripts/plant_breaches.py
+
+  container:
+    name: image builds and serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: docker build -t counterparty-resolver:ci .
+
+      # Started without CR_APPROVER_TOKEN on purpose: the assertion is that the deployed default is
+      # read-only and that a write is refused with 403 rather than being merely un-clickable.
+      - name: Serve, and refuse a write
+        run: |
+          docker run -d --name console -p 8000:8000 counterparty-resolver:ci
+          for _ in $(seq 1 30); do
+            curl -sf http://127.0.0.1:8000/health && break
+            sleep 1
+          done
+          curl -sf http://127.0.0.1:8000/health | tee /dev/stderr | grep -q '"writable": *false'
+          curl -s -o /dev/null -w '%{http_code}' -X POST \
+            -d 'token=anything' http://127.0.0.1:8000/pairs/whatever/approve | grep -qx 403
+          docker rm -f console
+
+  evidence:
+    name: rebuild the corpus from source
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - run: uv sync --frozen --dev
+
+      - name: Rebuild the corpus from GLEIF
+        run: uv run python scripts/build_corpus.py --refresh
+
+      # Kill criterion D, tested rather than claimed: the same inputs must produce the same labels.
+      # Compared against the committed artifact, which is the only version anybody can check.
+      - name: The labels must not have moved
+        run: uv run python scripts/verify_reproducible.py
+
+      - name: Re-derive the split and re-score development
+        run: |
+          uv run python scripts/freeze_holdout.py
+          uv run python scripts/evaluate.py
+
+      - name: The kill criteria, against the rebuilt artifacts
+        run: uv run python -m pytest tests/test_kill_criteria.py -v
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: rebuilt-evidence
+          path: artifacts/
+          retention-days: 14

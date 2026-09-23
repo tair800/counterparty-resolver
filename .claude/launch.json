@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "steward-console",
+      "runtimeExecutable": "uv",
+      "runtimeArgs": ["run", "uvicorn", "counterparty_resolver.api.app:app", "--port", "8014"],
+      "port": 8014
+    }
+  ]
+}
