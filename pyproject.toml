@@ -33,7 +33,9 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "RUF", "S", "PL"]
 ignore = ["PLR0913"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/*" = ["S101", "PLR2004"]
+# N802: the kill tests are named for ADR-001's conditions A-F; lowercasing them would
+# disconnect the test from the criterion it exists to enforce.
+"tests/*" = ["S101", "PLR2004", "N802"]
 "scripts/*" = ["S101", "PLR2004"]
 
 [tool.mypy]

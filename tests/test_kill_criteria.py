@@ -81,7 +81,11 @@ def test_B_the_duplicates_exhibit_the_claimed_variant_types() -> None:
     assert len(sample) >= VARIANT_SAMPLE, f"only {len(sample)} positives to inspect"
 
     seen = {v for pair in sample for v in pair.get("variant_types", [])}
-    required = {"legal_form_variance", "diacritic_or_casing_drift", "distinct_registration_authority"}
+    required = {
+        "legal_form_variance",
+        "diacritic_or_casing_drift",
+        "distinct_registration_authority",
+    }
     missing = required - seen
 
     assert not missing, (
@@ -96,10 +100,20 @@ def test_B_the_duplicates_exhibit_the_claimed_variant_types() -> None:
 def test_C_every_pair_carries_its_provenance() -> None:
     """A label whose origin is not recorded is a label nobody can check."""
     corpus = _load("corpus.json")
-    required = {"pair_id", "source", "left_id", "right_id", "label", "label_basis", "source_revision"}
+    required = {
+        "pair_id",
+        "source",
+        "left_id",
+        "right_id",
+        "label",
+        "label_basis",
+        "source_revision",
+    }
 
     incomplete = [
-        p["pair_id"] for p in corpus["pairs"] if not required.issubset(p) or not all(p[k] for k in required)
+        p["pair_id"]
+        for p in corpus["pairs"]
+        if not required.issubset(p) or not all(p[k] for k in required)
     ]
 
     assert not incomplete, f"ADR-001 kill test C: {len(incomplete)} pairs without full provenance"
@@ -142,7 +156,8 @@ def test_F_the_system_beats_the_best_predeclared_baseline() -> None:
     best = max(b["precision"] for b in evaluation["development"]["baselines"].values())
 
     assert system > best, (
-        f"ADR-001 kill test F: system precision {system:.4f} does not beat the best baseline {best:.4f}"
+        f"ADR-001 kill test F: system precision {system:.4f} does not beat the best "
+        f"baseline {best:.4f}"
     )
 
 
