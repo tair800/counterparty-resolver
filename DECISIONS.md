@@ -269,3 +269,64 @@ duplicates nobody has adjudicated yet. `TIFFANY AND COMPANY` at RA000628 against
 RA000602 is labelled a negative and is almost certainly one company. Every arm is charged for these,
 and arms that decide more are charged more. Published precision is therefore a **floor**, not an
 estimate, and no number in this repository should be read as the true one.
+
+---
+
+## ADR-003 — The hold-out, scored once
+
+**Status:** accepted, 2026-09-24, **after** `549ab39`, which is the commit that contains ADR-002, the
+corpus, the frozen split and a development-only `evaluation.json` with no `holdout` key. Everything
+here was measured after that commit and **nothing in the decision path changes on the basis of it.**
+
+### The result
+
+| arm | precision | recall | F1 | false merges |
+|---|---|---|---|---|
+| `exact_normalized_name` | 0.9967 | 0.4902 | 0.6572 | 2 |
+| `fuzzy_name_only_0.90` | 0.8890 | 0.6468 | 0.7488 | 99 |
+| `identifier_first` | 0.9817 | 0.6117 | 0.7538 | 14 |
+| **system** | **0.9986** | 0.5808 | 0.7344 | **1** |
+
+2,452 pairs, 1,226 positive and 1,226 negative, over entity clusters no development pair touches.
+
+### It generalises, and that is the whole point of the file
+
+| | development | hold-out | gap |
+|---|---|---|---|
+| precision | 0.9980 | 0.9986 | +0.0006 |
+| recall | 0.5758 | 0.5808 | +0.0050 |
+| F1 | 0.7303 | 0.7344 | +0.0041 |
+
+Project 3 published a development F1 of 0.963 and a held-out F1 of 0.328, and that gap is the reason
+`holdout.py` exists. Here the two sides agree to within 0.005 on every metric. The reason is not
+skill: **there is no fitted parameter to overfit.** The decision is deterministic rules over
+interpretable features, the weights were argued from meaning rather than tuned, and the one number
+chosen from the development curve — `THRESHOLD_MATCH` — was chosen by removing the band entirely.
+A system with nothing to fit generalises; the hold-out is what turns that from an argument into a
+measurement.
+
+### The hold-out's negatives are easier, and the precision must be read with that in mind
+
+Hard-negative mining ranks candidates by name similarity and keeps the most confusable, against a
+per-side quota. The development side has roughly four times the records, so its quota reaches far
+deeper into a far larger pool of near-misses:
+
+| | negatives | mean name similarity | median | share ≥ 0.90 |
+|---|---|---|---|---|
+| development | 5,266 | 0.9037 | 0.8923 | 43.2% |
+| hold-out | 1,226 | 0.8147 | 0.8266 | 8.1% |
+
+`fuzzy_name_only_0.90` shows the size of that difference plainly: 0.5936 precision on development
+against 0.8890 on the hold-out, from the same rule. So **the hold-out's absolute precision is not
+comparable to development's**, and the honest claim is the relative one — the same ordering of arms,
+and the same distance between them, on entities the rules have never seen. The development number is
+the conservative one and is the number this project quotes.
+
+The review rate moves for the same reason: 21.2% against 11.6%. A queue is only as large as the
+number of genuinely ambiguous pairs put in front of it.
+
+### What did not change
+
+No threshold, feature, weight, hard signal, normalisation rule or blocking key was altered after the
+table above existed. ADR-001 fixed that, and the check is `git log`: the last commit touching
+`src/` is `549ab39`, which precedes this record.

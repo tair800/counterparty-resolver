@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-23T21:00:42+00:00",
+ "generated_at": "2026-09-23T21:04:53+00:00",
  "corpus_revision": "2026-09-23T08:00:00Z",
  "thresholds": {
   "match": null,
@@ -358,5 +358,77 @@
    "threshold_no_match": 0.66,
    "why": "THRESHOLD_MATCH is None because the MATCH band decided at 0.645 precision on development and ADR-001 fixes that a wrong merge is the expensive error. THRESHOLD_NO_MATCH is the widest review band the predeclared 25% abstention cap permits, which maximises the duplicates a reviewer can reach; it cannot move precision, recall or F1."
   }
+ },
+ "holdout": {
+  "pairs": 2452,
+  "positives": 1226,
+  "negatives": 1226,
+  "baselines": {
+   "exact_normalized_name": {
+    "true_positives": 601,
+    "false_positives": 2,
+    "true_negatives": 1224,
+    "false_negatives": 625,
+    "review_on_positive": 0,
+    "review_on_negative": 0,
+    "pairs": 2452,
+    "decided": 2452,
+    "precision": 0.9967,
+    "recall": 0.4902,
+    "f1": 0.6572,
+    "review_rate": 0.0,
+    "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+   },
+   "fuzzy_name_only_0.90": {
+    "true_positives": 793,
+    "false_positives": 99,
+    "true_negatives": 1127,
+    "false_negatives": 433,
+    "review_on_positive": 0,
+    "review_on_negative": 0,
+    "pairs": 2452,
+    "decided": 2452,
+    "precision": 0.889,
+    "recall": 0.6468,
+    "f1": 0.7488,
+    "review_rate": 0.0,
+    "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+   },
+   "identifier_first": {
+    "true_positives": 750,
+    "false_positives": 14,
+    "true_negatives": 1212,
+    "false_negatives": 476,
+    "review_on_positive": 0,
+    "review_on_negative": 0,
+    "pairs": 2452,
+    "decided": 2452,
+    "precision": 0.9817,
+    "recall": 0.6117,
+    "f1": 0.7538,
+    "review_rate": 0.0,
+    "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+   }
+  },
+  "system": {
+   "true_positives": 712,
+   "false_positives": 1,
+   "true_negatives": 1145,
+   "false_negatives": 310,
+   "review_on_positive": 204,
+   "review_on_negative": 80,
+   "pairs": 2452,
+   "decided": 2168,
+   "precision": 0.9986,
+   "recall": 0.5808,
+   "f1": 0.7344,
+   "review_rate": 0.1158,
+   "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+   "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+  },
+  "note": "Scored once, after the split was committed. ADR-001 fixes that no rule, threshold, feature or normalisation changes on the basis of this number."
  }
 }
