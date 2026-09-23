@@ -14,6 +14,7 @@ ADR-001 fixes that they are scored once.
 from __future__ import annotations
 
 import json
+import logging
 import re
 from pathlib import Path
 from typing import Any
@@ -161,6 +162,20 @@ def test_submitting_the_same_reversal_twice_records_it_once(writable: TestClient
 
     assert again.status_code == 303
     assert writable.get("/health").json()["ledger_entries"] == 2
+
+
+def test_a_refused_write_is_logged(read_only: TestClient, caplog: pytest.LogCaptureFixture) -> None:
+    """A logging call nothing emits is not an audit trail, it is decoration.
+
+    There was no logging at all in `src/` until a review pointed out that a system whose own
+    argument is "the person asking why a payment went to the wrong counterparty needs the record"
+    was discarding every refused approval in silence.
+    """
+    with caplog.at_level(logging.WARNING, logger="counterparty_resolver.console"):
+        read_only.post(f"/pairs/{_a_pair_id(read_only)}/approve", data={"token": "anything"})
+
+    assert [r.message for r in caplog.records] == ["write refused: read-only demo"]
+    assert caplog.records[0].path == "/pairs/" + _a_pair_id(read_only) + "/approve"  # type: ignore[attr-defined]
 
 
 def test_the_ledger_records_the_tokens_identity(writable: TestClient) -> None:

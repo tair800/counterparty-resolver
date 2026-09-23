@@ -155,6 +155,14 @@ BREACHES: tuple[Breach, ...] = (
         ],
     ),
     Breach(
+        name="a-refused-write-is-not-logged",
+        guards="the console records what it refused, rather than dropping it",
+        path="src/counterparty_resolver/api/app.py",
+        find='        log.warning("write refused: read-only demo", extra={"path": request.url.path})',
+        replace="        pass",
+        expect_failure_in=["tests/test_api.py::test_a_refused_write_is_logged"],
+    ),
+    Breach(
         name="approver-identity-from-the-request",
         guards="the ledger records the identity the token bought, not one the client asserted",
         path="src/counterparty_resolver/api/app.py",

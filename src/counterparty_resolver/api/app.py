@@ -50,6 +50,28 @@ DATABASE_PATH = os.environ.get("CR_DATABASE", ":memory:")
 #: refused approval in silence.
 log = logging.getLogger("counterparty_resolver.console")
 
+#: Where the console's records go, and how loud. `CR_LOG_LEVEL` for the level.
+LOG_LEVEL = os.environ.get("CR_LOG_LEVEL", "INFO").upper()
+
+
+def configure_logging() -> None:
+    """Give the console's logger somewhere to write.
+
+    Without this the calls below emit nothing: Python's default configuration drops records from a
+    logger with no handler, and uvicorn configures its own loggers rather than the root. A logging
+    call that produces no output is worse than none -- it reads as an audit trail in review and is
+    silence in production, which is precisely the defect this module was criticised for having.
+
+    Guarded, because the application owns the root logger and a test or an embedding process may
+    have configured it already.
+    """
+    if not logging.getLogger().handlers:
+        logging.basicConfig(
+            level=LOG_LEVEL,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
+    log.setLevel(LOG_LEVEL)
+
 
 def _load(name: str) -> dict[str, Any]:
     path = ARTIFACTS / name
@@ -237,6 +259,7 @@ Approver = Annotated[str, Depends(_require_approver)]
 
 
 def create_app(*, console: Console | None = None) -> FastAPI:
+    configure_logging()
     app = FastAPI(
         title="counterparty-resolver — steward console",
         description=__doc__,
