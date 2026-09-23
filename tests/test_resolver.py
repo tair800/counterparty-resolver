@@ -260,26 +260,49 @@ def test_the_score_is_the_sum_of_what_the_features_contributed() -> None:
 # -------------------------------------------------------------------------------- the decision
 
 
-#: Above every MATCH cut-off in the published sweep, whose highest is 0.98. The pair below
-#: has to clear this or the test is asserting nothing: a pair scoring 0.71 would stay out of
-#: the MATCH band under any threshold, and the test would pass against a resolver that had
-#: quietly restored one. `plant_breaches.py` found exactly that hole.
-ABOVE_EVERY_SWEPT_MATCH_THRESHOLD = 0.98
+#: Every MATCH cut-off ADR-002 swept that the pair below actually clears. The sweep also contains
+#: 0.96 and 0.98, which this pair scores under; a test cannot prove a band it never reaches would
+#: merge the pair, so those are left out rather than asserted about.
+#:
+#: The list exists because the first version of this test used a pair scoring 0.71 and asserted
+#: only that the decision was not MATCH -- true under every threshold, including a restored one.
+#: `plant_breaches.py` restored `THRESHOLD_MATCH = 0.86` and the test stayed green.
+RESTORABLE_MATCH_CUTOFFS = (0.86, 0.88, 0.90, 0.92, 0.94)
+
+#: The address both sides carry, so `address_similarity` contributes fully and the pair lands high
+#: in the band rather than in the middle of it. Missing fields score 0.5 by design, and a pair with
+#: half its evidence missing cannot reach the thresholds this test is about.
+_ADDRESS = {
+    "country": "GB",
+    "city": "London",
+    "postal_code": "EC1A 1BB",
+    "address_lines": ("12 Featherstone Street",),
+}
 
 
-def test_the_weighted_score_never_asserts_a_match_on_its_own() -> None:
-    """ADR-002. Two names as alike as a score can make them still only reach REVIEW."""
-    left = record("Acme Global Holdings", country="GB", city="London")
-    right = record("Acme Global Holding", country="GB", city="London")
+@pytest.mark.parametrize("cutoff", RESTORABLE_MATCH_CUTOFFS)
+def test_the_weighted_score_never_asserts_a_match_on_its_own(cutoff: float) -> None:
+    """ADR-002, stated as a difference: this pair is inside the band, and is still not merged.
 
-    decision = resolve_pair(CandidatePair(pair_id="p", left=left, right=right))
+    Two assertions, and the first is what gives the second its force. A pair that no MATCH band
+    would have accepted proves nothing about whether a band exists.
+    """
+    # `Ltd` against `GmbH`: identical once the legal form is stripped, and two different
+    # companies -- which is exactly what `normalize.py` canonicalises rather than deletes for.
+    left = record("Acme Global Holdings Limited", **_ADDRESS)
+    right = record("Acme Global Holdings GmbH", **_ADDRESS)
+    pair = CandidatePair(pair_id="p", left=left, right=right)
 
-    assert decision.evidence.hard_signal is None, "this pair must be decided by the score"
-    assert decision.score > ABOVE_EVERY_SWEPT_MATCH_THRESHOLD, (
-        f"the pair scores {decision.score}, which no MATCH band would have accepted anyway"
+    with_a_band = resolve_pair(pair, threshold_match=cutoff)
+    as_shipped = resolve_pair(pair)
+
+    assert with_a_band.decision is Decision.MATCH, (
+        f"the pair scores {with_a_band.score}, which is below the {cutoff} band, so this test "
+        "would pass against a resolver that had quietly restored one"
     )
-    assert decision.decision is not Decision.MATCH
-    assert decision.score >= THRESHOLD_NO_MATCH
+    assert as_shipped.evidence.hard_signal is None, "this pair must be decided by the score alone"
+    assert as_shipped.decision is Decision.REVIEW
+    assert as_shipped.score >= THRESHOLD_NO_MATCH
 
 
 def test_a_pair_with_nothing_in_common_is_a_no_match_rather_than_a_review() -> None:

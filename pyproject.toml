@@ -47,6 +47,10 @@ ignore = ["PLR0913"]
 # count and a registration-authority code. No value here comes from a request, and writing the
 # ten UNION branches by hand would let them drift from the schema they unpivot.
 "src/counterparty_resolver/store/crosswalk.py" = ["S608"]
+# E501: the breach anchors are copied verbatim from the files they patch, and the script fails
+# loudly when one no longer applies. Wrapping them across lines to satisfy a line limit would
+# make a silent typo look like a deliberate edit.
+"scripts/plant_breaches.py" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

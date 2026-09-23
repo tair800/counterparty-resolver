@@ -30,7 +30,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SHOTS = ROOT / "docs" / "screenshots"
 
 #: Wide enough for the evidence table to breathe, narrow enough to stay legible in a README.
-VIEWPORT = {"width": 1180, "height": 900}
+#: Passed as a literal at the call site rather than as a constant, because playwright types the
+#: parameter as a TypedDict and a `dict[str, int]` constant is not one.
+WIDTH, HEIGHT = 1180, 900
 
 #: Given up on after this long. A console that has not answered in 30 seconds is broken, and
 #: waiting longer only makes the failure slower to find.
@@ -98,7 +100,9 @@ def main() -> int:
                 "evaluation": "/evaluation",
             }
             for scheme in ("light", "dark"):
-                context = browser.new_context(viewport=VIEWPORT, color_scheme=scheme)
+                context = browser.new_context(
+                    viewport={"width": WIDTH, "height": HEIGHT}, color_scheme=scheme
+                )
                 page = context.new_page()
                 for name, path in screens.items():
                     page.goto(f"{base}{path}", wait_until="networkidle")

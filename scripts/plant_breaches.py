@@ -235,6 +235,14 @@ def _leak_a_holdout_pair(text: str) -> str:
 
 
 def _apply(breach: Breach, text: str) -> str:
+    """The breached contents of one file.
+
+    Line endings are normalised to LF first. This repository is worked on under Windows and
+    some files are stored CRLF, so a multi-line anchor written as a Python literal matched in
+    some files and silently failed in others -- and a breach that fails to apply is a guard
+    left unproven, which is the thing this script exists to prevent.
+    """
+    text = text.replace("\r\n", "\n")
     if breach.name == "held-out-pair-reaches-the-console":
         return _leak_a_holdout_pair(text)
     if breach.find not in text:
@@ -280,7 +288,9 @@ def main() -> int:
         path = ROOT / breach.path
         original = path.read_bytes()
         try:
-            path.write_text(_apply(breach, original.decode("utf-8")), encoding="utf-8", newline="")
+            path.write_text(
+                _apply(breach, original.decode("utf-8")), encoding="utf-8", newline="\n"
+            )
             result = _run(breach.expect_failure_in or ["tests/test_kill_criteria.py"])
             noticed = result.returncode != 0
             if breach.expect_output:
