@@ -37,9 +37,12 @@ all fixed in [`DECISIONS.md`](DECISIONS.md) at commit `b620131`, **before the pa
 | **system** | **0.9986** | 0.5808 | 0.7344 | **1** |
 
 **Development to hold-out, every metric moves by less than 0.005.** That is the number this project
-is actually about. The reason it holds is not skill: there is no fitted parameter to overfit. The
-weights were argued from the meaning of each feature before any result existed, and the one number
-chosen from a development curve was chosen by removing a band rather than tuning it.
+is actually about, and the reason it holds is not skill: **there is no fitted parameter to overfit.**
+The seven feature weights were argued from the meaning of each feature before any result existed and
+have not moved since. Two numbers were chosen from a development curve, and neither is a fit:
+`THRESHOLD_MATCH` was set to `None` — the band was removed rather than tuned — and
+`THRESHOLD_NO_MATCH` provably cannot move precision, recall or F1, which the published sweep shows
+as an identical row repeated down the whole column.
 
 ### Three things this table says that are not flattering, and are not hidden
 
