@@ -138,3 +138,134 @@ says not to add PostgreSQL where files suffice.
 against fixed legacy schemas, the additive merge ledger, and a committed unmerge test. Skipping that
 would empty a load-bearing row portfolio-wide, which is the mistake project 4's ADR-002 made with
 rate limiting and had to be sent back to fix.
+
+---
+
+## ADR-002 — What the development corpus changed, written down before the hold-out is scored
+
+**Status:** accepted, 2026-09-24, **after development scoring and before the hold-out is scored.**
+
+This record exists so the order is checkable in git rather than asserted. Everything below was
+decided from the **development** corpus. The hold-out has never been scored at the time this file is
+committed; `artifacts/evaluation.json` at this commit contains no `holdout` key, which is the
+mechanical form of that claim.
+
+### The hold-out's negatives were re-drawn. Its entities were not.
+
+`bb02786` committed a corpus whose negatives were taken in blocking-iteration order. That did not
+implement ADR-001's requirement that negatives be "hard by construction", and it showed: every arm,
+the system and all three baselines, scored ~1.0 precision. A corpus on which nothing can be wrong
+measures nothing — `artifacts/evaluation-first-construction.json` is that run, kept so the claim is
+readable rather than recalled: 1.000, 0.9997, 1.000 and 1.000 precision across the four arms.
+Negatives are now the most name-similar unlinked pairs available, drawn within one side of the split
+against a per-side quota.
+
+Re-drawing negatives changes which negative pairs land in the hold-out. It does not change **which
+entities** are held out, and that is the property the split exists to protect. Verified against the
+`bb02786` artifact, not asserted:
+
+| | |
+|---|---|
+| cluster-to-side assignment | identical |
+| held-out positives, then and now | 1,226 of 1,226 — the same pairs |
+| pairs that crossed between development and hold-out | 0 |
+| hold-out pairs that changed | 1,145, **all negatives**, all drawn within the hold-out side |
+
+### The weighted score does not assert a match
+
+`THRESHOLD_MATCH` is `None`. Measured, not preferred: a MATCH band at 0.86 decided 234 development
+pairs, 151 correctly and 83 wrongly — **0.645 precision inside the band**. ADR-001 had already fixed
+that a wrong merge is the expensive error, and a rule that is wrong a third of the time is not an
+auto-merge rule, it is a queue. Removing the band costs 0.029 recall and removes 83 of 89 false
+merges. The whole sweep is published in `artifacts/evaluation.json` under `operating_points`.
+
+So a MATCH comes from a fact — a registrar's number, or exact agreement of the whole canonicalised
+name — and the weighted score decides only whether the rest is worth a person's time.
+
+**`THRESHOLD_NO_MATCH` cannot be tuned toward the kill test**, and the sweep proves it rather than
+claiming it: precision, recall and F1 are identical down the whole REVIEW column, because that
+cut-off only moves pairs between REVIEW and NO_MATCH and ADR-001 charges those identically. It is
+chosen operationally instead — the widest review band the predeclared 25% abstention cap permits,
+which puts the most real duplicates in front of a person. At 0.66 the queue is 21.2% of pairs and
+36.4% of it is genuine duplicates.
+
+### A rule that looked obviously right, and the corpus said no
+
+A `legal_form_conflict` hard signal — disjoint canonical legal forms mean different legal entities —
+was added on the strength of `Cheyne ... L.P.` against `Cheyne ... Inc.`, and then measured: **152
+true negatives against 76 false negatives.** The false negatives are `Scollard Energy Inc.` against
+`Scollard Energy Ltd.`, `balandis real estate ag` against `balandis real estate GmbH` — adjudicated
+duplicates, because conversion and re-domiciliation are things companies do. The corpus labels 151
+positives `legal_form_variance` outright. The rule was removed. It is recorded here because "we tried
+the obvious thing and the data refused it" is the part usually left out.
+
+### Three rules that survived, with what each one costs
+
+Measured per signal on development, so a reader can price them rather than trust them:
+
+| signal | TP | FP | FN | TN |
+|---|---|---|---|---|
+| identifier agreement | 1,893 | 0 | — | — |
+| identifying-name agreement | 1,139 | 6 | — | — |
+| identifier conflict | — | — | 405 | 1,144 |
+| discriminator conflict | — | — | 6 | 200 |
+
+**Identifier agreement is only a fact when the identifier identifies.** Every Allianz fund at
+RA000665 carries the same `registeredAs`, so the rule asserted that a small-cap equity fund and a
+bond fund were one company — 40 false merges. Agreement now requires the number to appear on at most
+two records corpus-wide, which is what a duplicate and its successor look like.
+
+**A registrar's number outranks a name, including an identical one.** Exact name agreement used to be
+checked first, and two SEC series — `S000016688` and `S000015881`, both named `High Yield Strategy
+Fund` — were merged because the strings matched. Ordering the checks is the whole design.
+
+**Identifier conflict costs 405 adjudicated duplicates and this is not fixable here.** `ALUDIUM ...
+S.L.` appears under `BI-66019` and `1000420033544` at one authority and is one company; `High Yield
+Strategy Fund` appears under two SEC series numbers and is two funds. The two situations are
+structurally identical in the evidence available, so no rule over this data separates them. The
+conflict rule keeps the 1,144 and pays the 405, because it produces zero false merges.
+
+**The discriminator rule now requires a designator on both sides.** `Target 2027` against
+`Target 2037` is two products; `NB Holdings Corporation (7690)` against `NB Holdings Corporation` is
+one company written down twice, and so is `Gladiator Equities P/L` against `Gladiator Equities Pty
+Ltd`, where `P/L` splits into two single letters that look like designators. Recovered 20 adjudicated
+duplicates at no cost in false merges.
+
+### Two bugs the guards found, both of which had been silently deflating the evidence
+
+**The legal-form table was mostly unreachable.** Canonicalisation looked up one token at a time, so
+every multi-word entry — `spolka z ograniczona odpowiedzialnoscia`, `gesellschaft mit beschraenkter
+haftung`, `company limited` — could never match, and two whole groups had multi-token canonical
+*values* that nothing downstream could strip. `features.py` carried a comment asserting that `Sp.K`
+and `SPOLKA KOMANDYTOWA` became one token; they did not. Canonicalisation now matches longest-first
+over n-grams, so the table means what it says, and `lp` was added — its absence was why
+`Cheyne ... L.P.` and `Cheyne ... Inc.` looked alike.
+
+**"Casing drift" could not detect casing.** `differs_only_by_diacritics_or_case` asked
+`normalize_name(..., fold=False)` whether two names differed, but normalisation lowercases whether or
+not it folds accents — so `DYNAMIC FIXED INCOME FUND` and `Dynamic Fixed Income Fund` came back
+identical and the variant named in the function's own title was invisible. It under-counted that
+drift **19-fold: 39 pairs became 740.** Kill test B failed and is what caught it. The `fold`
+parameter bought nothing it claimed to and was removed.
+
+### The honest reading of kill test F
+
+F passes on development: system precision **0.9980** against the best baseline's **0.9973**. That
+margin is **one false merge** — six against seven — and nobody should read it as a comfortable win.
+
+Two things must be said beside it, because the table says them anyway:
+
+- **`identifier_first` beats the system on F1**, 0.7607 against 0.7303. F was predeclared on
+  precision and the system wins there, decisively on count — 6 false merges against 48. It does not
+  win on the aggregate, and this document is not going to quote only the metric that flatters it.
+- **The system's recall comes almost entirely from hard rules.** The weighted-feature apparatus
+  earns its place as a triage queue, not as a matcher. That is a smaller claim than the architecture
+  implies, and it is the one the measurement supports.
+
+### The ceiling nothing here can lift: the negative class contains unadjudicated duplicates
+
+Negatives are the most name-similar pairs GLEIF has *not* linked, which selects precisely for
+duplicates nobody has adjudicated yet. `TIFFANY AND COMPANY` at RA000628 against `TIFFANY & CO.` at
+RA000602 is labelled a negative and is almost certainly one company. Every arm is charged for these,
+and arms that decide more are charged more. Published precision is therefore a **floor**, not an
+estimate, and no number in this repository should be read as the true one.

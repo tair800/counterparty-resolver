@@ -4,11 +4,12 @@ ADR-001 fixes six conditions, A-F, any of which fails the project. This file ass
 the **committed artifacts** rather than against anything the resolver reports about itself: a
 component that grades itself is not evidence.
 
-It opens with an `importorskip` because it is committed before `counterparty_resolver` exists. That
-skip is a pre-registration device with a short life — `test_predeclaration.py` fails the build the
-moment the package is importable and the skip is still here, and `conftest.py` refuses the whole
-session if anything disables these tests by a mark. Project 4 shipped a guard that checked only the
-literal string `importorskip` and stayed green under `pytest.mark.skip`; that is not repeated here.
+It opened with an `importorskip`, because it was committed at `b620131` before
+`counterparty_resolver` existed. That skip was a pre-registration device with a short life and it is
+gone: `test_predeclaration.py` fails the build the moment the package is importable and any skip is
+still here, and `conftest.py` refuses the whole session if anything disables these tests by a mark.
+Project 4 shipped a guard that checked only the literal string `importorskip` and stayed green under
+`pytest.mark.skip`; that is not repeated here.
 """
 
 from __future__ import annotations
@@ -18,11 +19,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-
-pytest.importorskip(
-    "counterparty_resolver.corpus.build",
-    reason="predeclared before implementation; remove this skip once the package exists",
-)
 
 ROOT = Path(__file__).resolve().parents[1]
 ARTIFACTS = ROOT / "artifacts"

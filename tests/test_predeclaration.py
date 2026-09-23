@@ -37,14 +37,55 @@ def test_the_kill_test_still_names_every_predeclared_condition() -> None:
     assert not missing, f"the predeclared kill test lost: {', '.join(missing)}"
 
 
+def _dotted(node: ast.expr) -> str:
+    """`pytest.mark.skipif` from the attribute chain, or `""` if the node is not a plain name."""
+    parts: list[str] = []
+    while isinstance(node, ast.Attribute):
+        parts.append(node.attr)
+        node = node.value
+    if not isinstance(node, ast.Name):
+        return ""
+    parts.append(node.id)
+    return ".".join(reversed(parts))
+
+
+#: Ways a test file can switch itself off. Matched against parsed calls and decorators, never
+#: against the text -- a grep-based version of this guard failed the build because the module
+#: docstring *described* the skip it had removed, which is the wrong thing to be sensitive to.
+_SKIPPING = frozenset(
+    {
+        "pytest.importorskip",
+        "importorskip",
+        "pytest.skip",
+        "pytest.xfail",
+        "pytest.mark.skip",
+        "pytest.mark.skipif",
+        "pytest.mark.xfail",
+    }
+)
+
+
 def test_the_predeclaration_skip_does_not_outlive_the_package() -> None:
-    """Once `counterparty_resolver` imports, the kill test must actually run."""
+    """Once `counterparty_resolver` imports, the kill test must actually run.
+
+    Parsed, not grepped. The earlier version searched the source text for `importorskip` and
+    friends, which meant it fired on the sentence explaining that the skip had been removed, and
+    would equally have missed a skip written as `getattr(pytest, name)`. Reading the tree asks the
+    question that matters: does anything in this file *call* a skip or *carry* a skip mark.
+    """
     if importlib.util.find_spec("counterparty_resolver") is None:
         pytest.skip("the package does not exist yet; the kill test is still predeclared")
 
-    source = KILL_TEST.read_text(encoding="utf-8")
-    banned = ["importorskip", "mark.skip", "skipif", "pytest.skip("]
-    found = [needle for needle in banned if needle in source]
+    tree = ast.parse(KILL_TEST.read_text(encoding="utf-8"))
+    found: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and (name := _dotted(node.func)) in _SKIPPING:
+            found.append(f"{name}() at line {node.lineno}")
+        elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef):
+            for decorator in node.decorator_list:
+                target = decorator.func if isinstance(decorator, ast.Call) else decorator
+                if (name := _dotted(target)) in _SKIPPING:
+                    found.append(f"@{name} on {node.name}")
 
     assert not found, (
         "counterparty_resolver is importable, so nothing in the kill test may disable itself. "

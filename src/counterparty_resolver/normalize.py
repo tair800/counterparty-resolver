@@ -33,30 +33,31 @@ __all__ = [
 #: they are different companies; mapping them to distinct canonical forms keeps that difference
 #: visible to the feature that looks for it while removing the spelling noise.
 _LEGAL_FORM_GROUPS: tuple[tuple[str, ...], ...] = (
-    ("ltd", "limited", "ltd.", "co ltd", "company limited"),
-    ("plc", "p.l.c.", "public limited company"),
-    ("llc", "l.l.c.", "limited liability company"),
-    ("llp", "l.l.p.", "limited liability partnership"),
-    ("inc", "inc.", "incorporated"),
-    ("corp", "corp.", "corporation"),
-    ("gmbh", "g.m.b.h.", "gesellschaft mit beschraenkter haftung"),
-    ("ag", "a.g.", "aktiengesellschaft"),
-    ("sa", "s.a.", "societe anonyme"),
-    ("sas", "s.a.s.", "societe par actions simplifiee"),
-    ("sarl", "s.a.r.l.", "societe a responsabilite limitee"),
-    ("bv", "b.v.", "besloten vennootschap"),
-    ("nv", "n.v.", "naamloze vennootschap"),
-    ("spa", "s.p.a.", "societa per azioni"),
-    ("srl", "s.r.l.", "societa a responsabilita limitata"),
-    ("sp k", "sp.k", "sp.k.", "spolka komandytowa", "spolka komandytowa sp k"),
-    ("sp z oo", "sp. z o.o.", "sp z o o", "spolka z ograniczona odpowiedzialnoscia"),
-    ("as", "a.s.", "aktieselskab", "aksjeselskap"),
-    ("ab", "a.b.", "aktiebolag"),
-    ("oy", "o.y.", "osakeyhtio"),
-    ("pty", "pty.", "proprietary"),
-    ("pvt", "pvt.", "private"),
-    ("pte", "pte.", "private limited"),
-    ("kk", "k.k.", "kabushiki kaisha"),
+    ("ltd", "limited", "co ltd", "company limited"),
+    ("plc", "public limited company"),
+    ("llc", "limited liability company"),
+    ("llp", "limited liability partnership"),
+    ("lp", "limited partnership"),
+    ("inc", "incorporated"),
+    ("corp", "corporation"),
+    ("gmbh", "gesellschaft mit beschraenkter haftung"),
+    ("ag", "aktiengesellschaft"),
+    ("sa", "societe anonyme"),
+    ("sas", "societe par actions simplifiee"),
+    ("sarl", "societe a responsabilite limitee"),
+    ("bv", "besloten vennootschap"),
+    ("nv", "naamloze vennootschap"),
+    ("spa", "societa per azioni"),
+    ("srl", "societa a responsabilita limitata"),
+    ("spk", "sp k", "spolka komandytowa"),
+    ("spzoo", "sp z oo", "spolka z ograniczona odpowiedzialnoscia"),
+    ("as", "aktieselskab", "aksjeselskap"),
+    ("ab", "aktiebolag"),
+    ("oy", "osakeyhtio"),
+    ("pty", "proprietary"),
+    ("pvt", "private"),
+    ("pte",),
+    ("kk", "kabushiki kaisha"),
     ("bhd", "berhad"),
     ("sdn", "sendirian"),
 )
@@ -65,6 +66,9 @@ _LEGAL_FORM_GROUPS: tuple[tuple[str, ...], ...] = (
 LEGAL_FORMS: dict[str, str] = {
     spelling: group[0] for group in _LEGAL_FORM_GROUPS for spelling in group
 }
+
+#: The longest key, in tokens. Canonicalisation matches greedily up to this width.
+_MAX_FORM_TOKENS = max(len(spelling.split()) for spelling in LEGAL_FORMS)
 
 #: Punctuation that separates tokens rather than belonging to one.
 _SEPARATORS = re.compile(r"[\s\u00a0,;:/\\|+\-_\u00b7\u2022\u2013\u2014]+")
@@ -88,28 +92,53 @@ def fold_accents(text: str) -> str:
     return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
-def normalize_name(name: str, *, fold: bool = True) -> str:
+def normalize_name(name: str) -> str:
     """A company name reduced to comparable form, with legal forms canonicalised, not deleted.
 
     Order matters and is fixed: decompose, fold, lowercase, expand ``&``, drop noise punctuation,
     split on separators, canonicalise any legal-form token, rejoin. Folding before lowercasing means
     a name is not sensitive to whether the source stored `Ö` or `O` + combining diaeresis.
 
+    Accents are always folded. An earlier signature let a caller keep them, for a feature that
+    wanted to know whether two names differed *only* by diacritics -- but the function lowercases
+    either way, so that caller could never see a casing difference and the option bought nothing it
+    claimed to. `features.differs_only_by_diacritics_or_case` asks the raw strings instead.
+
     Args:
         name: The raw name from a source system.
-        fold: Whether to strip accents. False keeps them, for the feature that wants to know whether
-            two names differ *only* by diacritics.
     """
-    text = unicodedata.normalize("NFKC", name)
-    if fold:
-        text = fold_accents(text)
-    text = text.lower()
+    text = fold_accents(unicodedata.normalize("NFKC", name)).lower()
     text = text.replace("&", " and ")
     text = _DROPPED.sub("", text)
     parts = [p for p in _SEPARATORS.split(text) if p]
+    return _WHITESPACE.sub(" ", " ".join(_canonicalise_forms(parts))).strip()
 
-    canonical = [LEGAL_FORMS.get(part, part) for part in parts]
-    return _WHITESPACE.sub(" ", " ".join(canonical)).strip()
+
+def _canonicalise_forms(parts: list[str]) -> list[str]:
+    """Replace legal-form spellings with one canonical token, longest spelling first.
+
+    Multi-token, because most of the table is multi-token: `spolka z ograniczona
+    odpowiedzialnoscia`, `gesellschaft mit beschraenkter haftung`, `company limited`. An earlier
+    version looked each token up on its own, which meant every multi-word entry in the table was
+    unreachable — the table declared an intent the code did not implement, and `features.py` carried
+    a comment asserting behaviour that therefore did not exist. Matching over n-grams is what makes
+    the table true.
+
+    Longest-first so `company limited` becomes `ltd` rather than `co` followed by `ltd`.
+    """
+    out: list[str] = []
+    index = 0
+    while index < len(parts):
+        for width in range(min(_MAX_FORM_TOKENS, len(parts) - index), 0, -1):
+            canonical = LEGAL_FORMS.get(" ".join(parts[index : index + width]))
+            if canonical is not None:
+                out.append(canonical)
+                index += width
+                break
+        else:  # pragma: no cover - the width-1 lookup always terminates the loop
+            out.append(parts[index])
+            index += 1
+    return out
 
 
 def strip_legal_form(normalized: str) -> str:

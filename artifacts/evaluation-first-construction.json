@@ -1,0 +1,224 @@
+{
+ "generated_at": "2026-09-23T20:25:58+00:00",
+ "corpus_revision": "2026-09-23T08:00:00Z",
+ "thresholds": {
+  "match": 0.86,
+  "no_match": 0.62
+ },
+ "candidate_generation": {
+  "records": 10424,
+  "true_pairs": 5266,
+  "surfaced": 4852,
+  "recall": 0.9214,
+  "candidates_generated": 247573,
+  "all_possible_pairs": 54324676,
+  "reduction_ratio": 0.995443,
+  "candidates_per_record": 23.75,
+  "recovered_by_key_family": {
+   "nameprefix": 3924,
+   "token": 3603,
+   "postal": 2797,
+   "acronym": 2560,
+   "regid": 2062
+  },
+  "examples_not_surfaced": [
+   {
+    "pair_id": "001825f066faeae6",
+    "left": "TPI TRAVEL PROFESSIONALS INTERNATIONAL",
+    "right": "I.A.S. - Independent Agency Services Corp."
+   },
+   {
+    "pair_id": "003ff46ec7b1587c",
+    "left": "CIMPOR TRADING E INVERSIONES SA",
+    "right": "INTERCEMENT TRADING E INVERSIONES SA"
+   },
+   {
+    "pair_id": "00c262b55a350289",
+    "left": "AR Alternative Income Fund Segregated Portfolio Fund",
+    "right": "ARIA Real Asset Income Fund Segregated Portfolio"
+   },
+   {
+    "pair_id": "019039084609b8e9",
+    "left": "Spirit TS Rome NY, LLC",
+    "right": "Cole TS Rome NY, LLC"
+   },
+   {
+    "pair_id": "0214163d9aedd182",
+    "left": "Maja Center GmbH",
+    "right": "Dahlke Family Holding GmbH"
+   },
+   {
+    "pair_id": "0313500b7ee870b0",
+    "left": "MAM",
+    "right": "SC MAM"
+   },
+   {
+    "pair_id": "04746746489595d0",
+    "left": "BT Bayern Treuhand Management & Technologie GmbH",
+    "right": "BTMT GmbH"
+   },
+   {
+    "pair_id": "07a483baa4167a15",
+    "left": "Globalprom B.V.",
+    "right": "JHR - SGPS, LDA"
+   },
+   {
+    "pair_id": "085863883a8b73f0",
+    "left": "SHINHAN BNP PARIBAS ASSET MANAGEMENT COMPANY LIMITED",
+    "right": "\uc2e0\ud55c\uc790\uc0b0\uc6b4\uc6a9(\uc8fc)"
+   },
+   {
+    "pair_id": "08621cce76689a12",
+    "left": "SCA HYGIENE PRODUCTS",
+    "right": "ESSITY BELGIUM"
+   },
+   {
+    "pair_id": "08f8d5097c566ae2",
+    "left": "Dongfeng Motor Group Co. Ltd.",
+    "right": "\u4e1c\u98ce\u6c7d\u8f66\u96c6\u56e2\u80a1\u4efd\u6709\u9650\u516c\u53f8"
+   },
+   {
+    "pair_id": "0a3eb9cb19f63cd3",
+    "left": "ProMetronics UG (haftungsbeschr\u00e4nkt)",
+    "right": "ProMetronics GmbH"
+   },
+   {
+    "pair_id": "0a7897dc6b533a39",
+    "left": "THE WORSHIPFUL COMPANY OF FURNITURE MAKERS CHARITABLE FUND (INC FTBA)",
+    "right": "THE WORSHIPFUL COMPANY OF FURNITURE MAKERS' CHARITABLE FUNDS INCORPORATING THE FURNISHING TRADES BENEVOLENT ASSOCIATION"
+   },
+   {
+    "pair_id": "0b054143b67b3c38",
+    "left": "Oaks Hotels & Resorts Limited",
+    "right": "MINOR HOTELS AUSTRALASIA LIMITED"
+   },
+   {
+    "pair_id": "0bc897ababb87163",
+    "left": "Nant Health, LLC",
+    "right": "NantHealth, Inc."
+   },
+   {
+    "pair_id": "0c02949280443080",
+    "left": "BLACKROCK GOLD FUND",
+    "right": "\u30d6\u30e9\u30c3\u30af\u30ed\u30c3\u30af\u30fb\u30b4\u30fc\u30eb\u30c9\u30fb\u30d5\u30a1\u30f3\u30c9"
+   },
+   {
+    "pair_id": "0c2946fe81d44e0b",
+    "left": "FINLAY J P E DISC SLT",
+    "right": "JOYCE PATRICIA EILEEN FINLAY SETTLEMENT"
+   },
+   {
+    "pair_id": "0c8e5155b581dca1",
+    "left": "\u4e2d\u56fd\u4ea4\u901a\u5efa\u8bbe\u80a1\u4efd\u6709\u9650\u516c\u53f8",
+    "right": "China Communications Construction Co. Ltd."
+   },
+   {
+    "pair_id": "0ca58c960a09dcb5",
+    "left": "PT Toba Bara Sejahtra Tbk",
+    "right": "PT TBS Energi Utama Tbk"
+   },
+   {
+    "pair_id": "0ccc0964b876399a",
+    "left": "Rydex ETF Trust - Guggenheim S&P Equal Weight Health Care ETF",
+    "right": "Invesco S&P 500\u00ae Equal Weight Health Care ETF"
+   },
+   {
+    "pair_id": "0d103c2a89c6f455",
+    "left": "GRIFFIN E DECD",
+    "right": "ELIZABETH GRIFFIN DECEASED"
+   },
+   {
+    "pair_id": "0df8324c136497b9",
+    "left": "M G STYLES WILL TRUST",
+    "right": "MICHAEL GEORGE STYLES DECEASED TRUST"
+   },
+   {
+    "pair_id": "0efcd325a3e12401",
+    "left": "Fullerton Fund - Fullerton Dynamic Strategies Fund - Aggressive",
+    "right": "Fullerton Total Return Multi-Asset Advantage"
+   },
+   {
+    "pair_id": "0f2399e98ab66dce",
+    "left": "THE H B G DALGETY'S GRANDCHILDREN'S SETTLEMENT",
+    "right": "THE NEXT GENERATION SETTLEMENT"
+   },
+   {
+    "pair_id": "10e6b9534a54ad76",
+    "left": "Bond Core Plus Fund of the American Bar Association Members / MTC Collective Trust",
+    "right": "Bond Core Plus Fund"
+   }
+  ],
+  "note": "Recall here caps every downstream number: a true pair blocking never surfaces cannot be recovered by any scorer. Reduction ratio is reported beside it because recall alone is maximised by blocking on nothing."
+ },
+ "development": {
+  "pairs": 10532,
+  "positives": 5266,
+  "negatives": 5266,
+  "baselines": {
+   "exact_normalized_name": {
+    "true_positives": 2550,
+    "false_positives": 0,
+    "true_negatives": 5266,
+    "false_negatives": 2716,
+    "review_on_positive": 0,
+    "review_on_negative": 0,
+    "pairs": 10532,
+    "decided": 10532,
+    "precision": 1.0,
+    "recall": 0.4842,
+    "f1": 0.6525,
+    "review_rate": 0.0,
+    "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+   },
+   "fuzzy_name_only_0.90": {
+    "true_positives": 3315,
+    "false_positives": 1,
+    "true_negatives": 5265,
+    "false_negatives": 1951,
+    "review_on_positive": 0,
+    "review_on_negative": 0,
+    "pairs": 10532,
+    "decided": 10532,
+    "precision": 0.9997,
+    "recall": 0.6295,
+    "f1": 0.7725,
+    "review_rate": 0.0,
+    "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+   },
+   "identifier_first": {
+    "true_positives": 3250,
+    "false_positives": 0,
+    "true_negatives": 5266,
+    "false_negatives": 2016,
+    "review_on_positive": 0,
+    "review_on_negative": 0,
+    "pairs": 10532,
+    "decided": 10532,
+    "precision": 1.0,
+    "recall": 0.6172,
+    "f1": 0.7633,
+    "review_rate": 0.0,
+    "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+   }
+  },
+  "system": {
+   "true_positives": 3189,
+   "false_positives": 0,
+   "true_negatives": 5201,
+   "false_negatives": 999,
+   "review_on_positive": 1078,
+   "review_on_negative": 65,
+   "pairs": 10532,
+   "decided": 9389,
+   "precision": 1.0,
+   "recall": 0.6056,
+   "f1": 0.7543,
+   "review_rate": 0.1085,
+   "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+   "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+  }
+ }
+}

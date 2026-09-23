@@ -23,6 +23,8 @@ import hashlib
 from collections.abc import Iterable
 from typing import Any
 
+from rapidfuzz.distance import JaroWinkler
+
 from counterparty_resolver.blocking import candidate_pairs
 from counterparty_resolver.corpus.holdout import assign_split
 from counterparty_resolver.domain import CandidatePair, CounterpartyRecord, VariantType
@@ -30,7 +32,11 @@ from counterparty_resolver.features import (
     differs_only_by_diacritics_or_case,
     differs_only_by_legal_form,
 )
-from counterparty_resolver.normalize import normalize_name
+from counterparty_resolver.normalize import (
+    normalize_identifier,
+    normalize_name,
+    strip_legal_form,
+)
 
 __all__ = ["CorpusStats", "build_corpus", "record_from_gleif", "variant_types_for"]
 
@@ -138,24 +144,16 @@ class CorpusStats(dict[str, Any]):
     """Counts the build produced, for the README and the kill test to read from one place."""
 
 
-def build_corpus(
+def _adjudicated_positives(
     duplicates: Iterable[dict[str, Any]],
     successors: dict[str, dict[str, Any]],
     *,
     source_revision: str,
-    negatives_per_positive: float = 1.0,
-    seed: int = 20260924,
-) -> dict[str, Any]:
-    """The labelled corpus.
+) -> tuple[list[CandidatePair], dict[str, CounterpartyRecord], _Clusters]:
+    """Every pair a registrar adjudicated, the records behind them, and their closed clusters.
 
-    Args:
-        duplicates: GLEIF records whose registration status is DUPLICATE.
-        successors: LEI -> record, for the surviving side of each pair.
-        source_revision: GLEIF's golden-copy publish date, pinned into every pair.
-        negatives_per_positive: How many negatives to draw per positive. 1.0 keeps the corpus
-            balanced, which ADR-001's kill test A requires in both directions.
-        seed: Fixed, so two runs of this function on the same input produce the same corpus --
-            kill test D.
+    The only place a positive label is authored, and it authors none of its own: a pair exists
+    here because GLEIF recorded one LEI as the duplicate of another.
     """
     positives: list[CandidatePair] = []
     records: dict[str, CounterpartyRecord] = {}
@@ -192,6 +190,32 @@ def build_corpus(
             )
         )
 
+    return positives, records, clusters
+
+
+def build_corpus(
+    duplicates: Iterable[dict[str, Any]],
+    successors: dict[str, dict[str, Any]],
+    *,
+    source_revision: str,
+    negatives_per_positive: float = 1.0,
+    seed: int = 20260924,
+) -> dict[str, Any]:
+    """The labelled corpus.
+
+    Args:
+        duplicates: GLEIF records whose registration status is DUPLICATE.
+        successors: LEI -> record, for the surviving side of each pair.
+        source_revision: GLEIF's golden-copy publish date, pinned into every pair.
+        negatives_per_positive: How many negatives to draw per positive. 1.0 keeps the corpus
+            balanced, which ADR-001's kill test A requires in both directions.
+        seed: Fixed, so two runs of this function on the same input produce the same corpus --
+            kill test D.
+    """
+    positives, records, clusters = _adjudicated_positives(
+        duplicates, successors, source_revision=source_revision
+    )
+
     # Negatives: surfaced by blocking, not linked by any adjudication, transitively, **and drawn
     # within one side of the hold-out split**.
     #
@@ -212,24 +236,47 @@ def build_corpus(
         positives_by_side[side[pair.left.source_id]] += 1
     quota = {name: int(count * negatives_per_positive) for name, count in positives_by_side.items()}
 
-    negatives: list[CandidatePair] = []
-    drawn: dict[str, int] = {"development": 0, "holdout": 0}
+    # **The hardest available, not the first available.** The first build took candidates in
+    # blocking iteration order, and the result was that every arm -- the system and all three
+    # baselines -- scored ~1.0 precision with essentially zero false positives. A corpus on which
+    # nothing can be wrong measures nothing, and ADR-001 had already said negatives must be "hard by
+    # construction"; taking whatever came first did not implement that sentence.
+    #
+    # So candidates are ranked by name similarity and the most confusable are kept. The ranking is
+    # a property of the pair, fixed independently of which arm it embarrasses, and computed before
+    # any arm is scored against it.
+    eligible: list[tuple[float, CounterpartyRecord, CounterpartyRecord, tuple[str, ...]]] = []
     seen: set[tuple[str, str]] = set()
 
     for left, right, keys in candidate_pairs(records.values()):
-        if all(drawn[name] >= quota[name] for name in quota):
-            break
         if clusters.same(left.source_id, right.source_id):
             continue  # A true positive. Sampling it as a negative would cap recall silently.
         if side[left.source_id] != side[right.source_id]:
             continue  # Would straddle the split and be dropped; drawing it wastes a negative.
-        where = side[left.source_id]
-        if drawn[where] >= quota[where]:
-            continue
         ordered = (min(left.key, right.key), max(left.key, right.key))
         if ordered in seen:
             continue
         seen.add(ordered)
+        similarity = float(
+            JaroWinkler.similarity(
+                normalize_name(left.legal_name), normalize_name(right.legal_name)
+            )
+        )
+        eligible.append((similarity, left, right, keys))
+
+    # Sorted by similarity, then by pair key so ties break deterministically rather than by dict
+    # ordering -- kill test D requires two runs to produce the same corpus.
+    eligible.sort(key=lambda item: (-item[0], item[1].key, item[2].key))
+
+    negatives: list[CandidatePair] = []
+    drawn: dict[str, int] = {"development": 0, "holdout": 0}
+
+    for similarity, left, right, keys in eligible:
+        if all(drawn[name] >= quota[name] for name in quota):
+            break
+        where = side[left.source_id]
+        if drawn[where] >= quota[where]:
+            continue
         drawn[where] += 1
         negatives.append(
             CandidatePair(
@@ -239,16 +286,47 @@ def build_corpus(
                 blocking_keys=keys,
                 label="no_match",
                 label_basis=(
-                    "surfaced by deterministic blocking and linked by no successorEntity "
-                    "relationship, transitively — a hard negative by construction"
+                    "surfaced by deterministic blocking, linked by no successorEntity relationship "
+                    f"transitively, and among the most name-similar such pairs available "
+                    f"(normalised-name Jaro-Winkler {similarity:.3f}) — a hard negative by "
+                    "construction, not a random one"
                 ),
                 source_revision=source_revision,
                 variant_types=variant_types_for(left, right),
             )
         )
 
+    # Token document frequency over every record, so `distinctive_token_agreement` has the same
+    # context wherever it runs -- the evaluator, the console, a test. Emitted into the artifact
+    # rather than recomputed, because a feature whose inputs are rebuilt differently in two places
+    # is a feature with two behaviours.
+    frequency: dict[str, int] = {}
+    for record in records.values():
+        for token in set(strip_legal_form(normalize_name(record.legal_name)).split()):
+            frequency[token] = frequency.get(token, 0) + 1
+
+    # How many records each (authority, number) is written on.
+    #
+    # `hard_signal` treats identifier agreement as a *fact* about identity, and that is only true
+    # when the identifier identifies one entity. In GLEIF it frequently does not: every Allianz
+    # fund registered at RA000665 carries the same `registeredAs`, so the fact-shaped rule asserted
+    # that a small-cap equity fund and a bond fund were one company -- 40 of the 116 false merges
+    # on the development corpus. Counted here, from the same records the pairs are built from, so
+    # the scorer and the corpus cannot hold different ideas of how distinctive a number is.
+    identifiers: dict[str, int] = {}
+    for record in records.values():
+        number = normalize_identifier(record.registered_as)
+        authority = (record.registration_authority or "").strip().upper()
+        if number and authority:
+            key = f"{authority}|{number}"
+            identifiers[key] = identifiers.get(key, 0) + 1
+
     pairs = positives + negatives
     return {
+        "token_document_frequency": dict(sorted(frequency.items(), key=lambda kv: -kv[1])),
+        "identifier_document_frequency": dict(
+            sorted(identifiers.items(), key=lambda kv: (-kv[1], kv[0]))
+        ),
         "generated_at": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
         "builder_version": BUILDER_VERSION,
         "seed": seed,

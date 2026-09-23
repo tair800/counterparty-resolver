@@ -173,5 +173,7 @@ class ResolutionDecision(_Frozen):
     decision: Decision
     score: float
     evidence: MatchEvidence
-    threshold_match: float = Field(description="At or above this, MATCH.")
+    threshold_match: float | None = Field(
+        description="At or above this, MATCH. `None` means the score may not assert a match."
+    )
     threshold_no_match: float = Field(description="Below this, NO_MATCH. Between the two, REVIEW.")
