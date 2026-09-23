@@ -118,8 +118,8 @@ BREACHES: tuple[Breach, ...] = (
         name="migration-alters-a-legacy-table",
         guards="source schemas are fixed; the resolution layer is additive",
         path="src/counterparty_resolver/store/migrations.py",
-        find='        statements="ALTER TABLE merge_ledger ADD COLUMN approver_id TEXT;",',
-        replace='        statements="ALTER TABLE legacy_gleif ADD COLUMN approver_id TEXT;",',
+        find='            "ALTER TABLE merge_ledger ADD COLUMN approver_id TEXT",',
+        replace='            "ALTER TABLE legacy_gleif ADD COLUMN approver_id TEXT",',
         expect_failure_in=[
             "tests/test_store.py::test_no_committed_migration_touches_a_legacy_table"
         ],
