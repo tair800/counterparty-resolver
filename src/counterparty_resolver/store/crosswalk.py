@@ -94,13 +94,22 @@ CREATE VIEW crosswalk AS
 """
 
 
-def connect(path: Path | str = ":memory:", *, target: int | None = None) -> sqlite3.Connection:
+def connect(
+    path: Path | str = ":memory:",
+    *,
+    target: int | None = None,
+    check_same_thread: bool = True,
+) -> sqlite3.Connection:
     """A database with both legacy schemas, the crosswalk views, and the resolution layer applied.
 
-    `target` stops the migration part-way, which is how the expand/contract tests hold the database
-    in its intermediate states and run the application against each one.
+    `target` stops the migration part-way, which is how the expand/contract tests hold the
+    database in its intermediate states and run the application against each one.
+
+    `check_same_thread=False` is for the console: Starlette runs sync endpoints on a thread
+    pool and an in-memory database cannot be reopened per request, because it *is* the state.
+    The caller that passes it owns the serialisation, and `api.Console` does it with one lock.
     """
-    connection = sqlite3.connect(path)
+    connection = sqlite3.connect(path, check_same_thread=check_same_thread)
     connection.execute("PRAGMA foreign_keys = ON")
     existing = connection.execute(
         "SELECT name FROM sqlite_master WHERE type='table' AND name='legacy_gleif'"

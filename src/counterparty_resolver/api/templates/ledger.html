@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% set screen = "ledger" %}
+{% block title %}Merge ledger{% endblock %}
+{% block body %}
+<h1>Merge ledger</h1>
+<p class="lede">
+  Append-only, enforced by the database rather than by convention: <code>BEFORE UPDATE</code> and
+  <code>BEFORE DELETE</code> triggers refuse both. A merge that turns out to be wrong is unpicked by
+  adding a reversing entry, so the history of a decision survives the decision being wrong.
+</p>
+
+{% if not entries %}
+<div class="card">
+  Nothing has been approved yet.
+  {% if not writable %}This console is read-only, so nothing can be.{% endif %}
+</div>
+{% endif %}
+
+{% for entry in entries %}
+<div class="card">
+  <div class="row" style="margin-top:0">
+    <span class="chip {{ 'match' if entry.action == 'merge' else 'no_match' }}">
+      {{ entry.action }}
+    </span>
+    <strong>#{{ entry.entry_id }}</strong>
+    <span class="meta">{{ entry.recorded_at }} · {{ entry.approver_id }}</span>
+    {% if entry.reverses_entry_id %}
+      <span class="chip">reverses #{{ entry.reverses_entry_id }}</span>
+    {% endif %}
+  </div>
+  <div class="meta" style="margin-top:8px">
+    {{ entry.left_source }}:{{ entry.left_id }} + {{ entry.right_source }}:{{ entry.right_id }}
+    → <strong>{{ entry.resolved_id }}</strong>
+    {%- if entry.score %} · score {{ '%.4f'|format(entry.score) }}{% endif %}
+  </div>
+  {% if entry.action == 'merge' %}
+  <form class="inline" method="post" action="/ledger/{{ entry.entry_id }}/unmerge"
+        style="margin-top:10px">
+    <input type="password" name="token" placeholder="approver token"
+           {% if not writable %}disabled{% endif %}>
+    <button type="submit" class="ghost" {% if not writable %}disabled{% endif %}>Unmerge</button>
+  </form>
+  {% endif %}
+</div>
+{% endfor %}
+{% endblock %}

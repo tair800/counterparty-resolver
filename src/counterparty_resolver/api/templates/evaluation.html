@@ -1,0 +1,137 @@
+{% extends "base.html" %}
+{% set screen = "evaluation" %}
+{% block title %}Evaluation{% endblock %}
+{% set dev = evaluation.development %}
+{% set hold = evaluation.holdout %}
+{% block body %}
+<h1>Evaluation</h1>
+<p class="lede">
+  Read straight from <code>artifacts/evaluation.json</code>, including the rows that do not flatter
+  the system. Labels are GLEIF duplicate adjudications; the kill test, the baselines and the
+  hold-out policy were all fixed before any of these numbers existed.
+</p>
+
+<h2>Development — {{ dev.pairs }} pairs, {{ dev.positives }} positive, {{ dev.negatives }} negative</h2>
+<table>
+  <tr>
+    <th>arm</th><th class="num">precision</th><th class="num">recall</th><th class="num">F1</th>
+    <th class="num">review</th><th class="num">false merges</th>
+  </tr>
+  {% for name, arm in dev.baselines.items() %}
+  <tr>
+    <td>{{ name }}</td>
+    <td class="num">{{ '%.4f'|format(arm.precision) }}</td>
+    <td class="num">{{ '%.4f'|format(arm.recall) }}</td>
+    <td class="num">{{ '%.4f'|format(arm.f1) }}</td>
+    <td class="num">—</td>
+    <td class="num">{{ arm.false_positives }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td><strong>system</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(dev.system.precision) }}</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(dev.system.recall) }}</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(dev.system.f1) }}</strong></td>
+    <td class="num">{{ '%.1f%%'|format(dev.system.review_rate * 100) }}</td>
+    <td class="num"><strong>{{ dev.system.false_positives }}</strong></td>
+  </tr>
+</table>
+<p class="meta">
+  The system wins on precision by one false merge, six against seven, and
+  <code>identifier_first</code> beats it on F1. Both are true and both are published.
+</p>
+
+{% if hold %}
+<h2>Held out — {{ hold.pairs }} pairs, scored once</h2>
+<table>
+  <tr>
+    <th>arm</th><th class="num">precision</th><th class="num">recall</th><th class="num">F1</th>
+    <th class="num">false merges</th>
+  </tr>
+  {% for name, arm in hold.baselines.items() %}
+  <tr>
+    <td>{{ name }}</td>
+    <td class="num">{{ '%.4f'|format(arm.precision) }}</td>
+    <td class="num">{{ '%.4f'|format(arm.recall) }}</td>
+    <td class="num">{{ '%.4f'|format(arm.f1) }}</td>
+    <td class="num">{{ arm.false_positives }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td><strong>system</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(hold.system.precision) }}</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(hold.system.recall) }}</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(hold.system.f1) }}</strong></td>
+    <td class="num"><strong>{{ hold.system.false_positives }}</strong></td>
+  </tr>
+</table>
+<p class="meta">
+  Entity clusters no development pair touches, split before any rule was written and scored once
+  afterwards. The hold-out's negatives are measurably easier than development's, so its absolute
+  precision is not comparable — the development number is the one this project quotes.
+</p>
+{% endif %}
+
+<h2>Candidate generation, which caps everything above</h2>
+{% set cg = evaluation.candidate_generation %}
+<table>
+  <tr><th>measure</th><th class="num">value</th><th>meaning</th></tr>
+  <tr>
+    <td>recall</td><td class="num">{{ '%.4f'|format(cg.recall) }}</td>
+    <td class="meta">{{ cg.surfaced }} of {{ cg.true_pairs }} adjudicated duplicates share a
+      blocking key. What blocking drops, no scorer recovers.</td>
+  </tr>
+  <tr>
+    <td>reduction ratio</td><td class="num">{{ '%.6f'|format(cg.reduction_ratio) }}</td>
+    <td class="meta">{{ '{:,}'.format(cg.candidates_generated) }} candidates from
+      {{ '{:,}'.format(cg.all_possible_pairs) }} possible pairs. Reported beside recall because
+      recall alone is maximised by blocking on nothing.</td>
+  </tr>
+</table>
+
+<h2>The MATCH cut-offs this configuration was chosen from</h2>
+<table>
+  <tr>
+    <th>threshold</th><th class="num">precision</th><th class="num">recall</th>
+    <th class="num">F1</th><th class="num">false merges</th>
+  </tr>
+  {% for point in evaluation.operating_points.match_threshold_sweep %}
+  <tr{% if point.threshold_match is none %} style="font-weight:600"{% endif %}>
+    <td>{{ 'never' if point.threshold_match is none else '%.2f'|format(point.threshold_match) }}</td>
+    <td class="num">{{ '%.4f'|format(point.precision) }}</td>
+    <td class="num">{{ '%.4f'|format(point.recall) }}</td>
+    <td class="num">{{ '%.4f'|format(point.f1) }}</td>
+    <td class="num">{{ point.false_positives }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="meta">
+  The shipped configuration is the last row: the weighted score never asserts a match. A band at
+  0.86 decided 234 pairs, 151 correctly — 0.645 precision inside the band — and a rule wrong a third
+  of the time is a queue, not an auto-merge.
+</p>
+
+<h2>The REVIEW cut-off, which cannot move the numbers above</h2>
+<table>
+  <tr>
+    <th>threshold</th><th class="num">precision</th><th class="num">recall</th>
+    <th class="num">F1</th><th class="num">queue</th><th class="num">queue yield</th>
+  </tr>
+  {% for point in evaluation.operating_points.review_threshold_sweep %}
+  <tr{% if point.threshold_no_match == evaluation.thresholds.no_match %} style="font-weight:600"{% endif %}>
+    <td>{{ '%.2f'|format(point.threshold_no_match) }}</td>
+    <td class="num">{{ '%.4f'|format(point.precision) }}</td>
+    <td class="num">{{ '%.4f'|format(point.recall) }}</td>
+    <td class="num">{{ '%.4f'|format(point.f1) }}</td>
+    <td class="num">{{ point.queue }}</td>
+    <td class="num">{{ '%.1f%%'|format(point.queue_yield * 100) }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<p class="meta">
+  Precision, recall and F1 are identical down the column: this cut-off only moves pairs between
+  REVIEW and NO_MATCH, and both are charged the same. A knob that cannot change the headline numbers
+  cannot be tuned toward the kill test. It is chosen operationally — the widest queue the
+  predeclared 25% abstention cap permits.
+</p>
+{% endblock %}

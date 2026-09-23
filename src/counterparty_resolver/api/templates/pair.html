@@ -1,0 +1,95 @@
+{% extends "base.html" %}
+{% set screen = "queue" %}
+{% block title %}{{ pair.left.legal_name }}{% endblock %}
+{% block body %}
+<h1>Pair {{ pair.pair_id }}</h1>
+<p class="lede">
+  Every feature, what it compared, and what it added to the score. A number a reader can only
+  compare with a threshold is not evidence; this table is what they are being asked to disagree
+  with.
+</p>
+
+<div class="card">
+  <div class="names">
+    <div>
+      <div class="name">{{ pair.left.legal_name }}</div>
+      <div class="meta">
+        {{ pair.left.source }}:{{ pair.left.source_id }}<br>
+        {{ pair.left.registration_authority or 'no registration authority' }}
+        {{ pair.left.registered_as or '' }}<br>
+        {{ [pair.left.city, pair.left.postal_code, pair.left.country]|select|join(', ') or '—' }}
+        {%- if pair.left.other_names %}<br>also known as: {{ pair.left.other_names|join('; ') }}
+        {%- endif %}
+      </div>
+    </div>
+    <div class="vs">vs</div>
+    <div>
+      <div class="name">{{ pair.right.legal_name }}</div>
+      <div class="meta">
+        {{ pair.right.source }}:{{ pair.right.source_id }}<br>
+        {{ pair.right.registration_authority or 'no registration authority' }}
+        {{ pair.right.registered_as or '' }}<br>
+        {{ [pair.right.city, pair.right.postal_code, pair.right.country]|select|join(', ') or '—' }}
+        {%- if pair.right.other_names %}<br>also known as: {{ pair.right.other_names|join('; ') }}
+        {%- endif %}
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <span class="chip {{ pair.decision }}">{{ pair.decision.replace('_', ' ') }}</span>
+    <span class="score">{{ '%.4f'|format(pair.score) }}</span>
+    {% for key in pair.blocking_keys %}<span class="chip">{{ key }}</span>{% endfor %}
+  </div>
+</div>
+
+{% if pair.hard_signal %}
+<h2>The fact that decided it</h2>
+<div class="card">
+  <div class="meta" style="color:var(--ink)">{{ pair.hard_signal }}</div>
+  <div class="meta" style="margin-top:6px">
+    A hard signal short-circuits the weighted sum. It is not a large weight — it is a different kind
+    of statement, and a weight can always be outvoted by enough of everything else.
+  </div>
+</div>
+{% endif %}
+
+<h2>Weighted features</h2>
+<table>
+  <tr>
+    <th>feature</th><th>what it compared</th><th class="num">value</th>
+    <th class="num">weight</th><th class="num">contributed</th>
+  </tr>
+  {% for c in pair.contributions %}
+  <tr>
+    <td>{{ c.feature.replace('_', ' ') }}</td>
+    <td class="meta">{{ c.detail }}</td>
+    <td class="num">{{ '%.3f'|format(c.value) }}</td>
+    <td class="num">{{ '%.2f'|format(c.weight) }}</td>
+    <td class="num">{{ '%.4f'|format(c.contribution) }}</td>
+  </tr>
+  {% endfor %}
+  <tr>
+    <td colspan="4"><strong>score</strong></td>
+    <td class="num"><strong>{{ '%.4f'|format(pair.score) }}</strong></td>
+  </tr>
+</table>
+
+<h2>Record this steward's decision</h2>
+{% if resolved_id %}
+<div class="card">
+  Already merged into <strong>{{ resolved_id }}</strong>. <a href="/ledger">See the ledger</a>.
+</div>
+{% else %}
+<form class="inline" method="post" action="/pairs/{{ pair.pair_id }}/approve">
+  <input type="password" name="token" placeholder="approver token"
+         {% if not writable %}disabled{% endif %}>
+  <button type="submit" {% if not writable %}disabled{% endif %}>Approve merge</button>
+  <a href="/"><button type="button" class="ghost">Back to the queue</button></a>
+</form>
+<p class="meta" style="margin-top:10px">
+  An approval appends to the merge ledger and points both source records at one resolved entity. It
+  never edits a legacy table, and it is reversible: an unmerge restores the source linkage exactly,
+  which is what the downstream systems join on.
+</p>
+{% endif %}
+{% endblock %}

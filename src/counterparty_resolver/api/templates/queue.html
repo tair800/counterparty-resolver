@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% set screen = "queue" %}
+{% block title %}Review queue{% endblock %}
+{% block body %}
+<h1>Review queue</h1>
+<p class="lede">
+  Pairs the resolver declined to decide. A fact — a registrar's number, or exact agreement of the
+  whole canonicalised name — decides on its own; everything else that clears the review threshold
+  arrives here. Highest score first, so the most nearly-decided are at the top.
+</p>
+
+<div class="row" style="margin-bottom:18px">
+  <span class="chip review">{{ queue|length }} awaiting a person</span>
+  <span class="chip match">{{ counts.match }} matched on a fact</span>
+  <span class="chip no_match">{{ counts.no_match }} denied</span>
+  <span class="chip">
+    {{ '%.1f%%'|format(evaluation.development.system.review_rate * 100) }} of the development corpus
+    is abstained on
+  </span>
+</div>
+
+{% for pair in queue %}
+<a class="card" href="/pairs/{{ pair.pair_id }}">
+  <div class="names">
+    <div>
+      <div class="name">{{ pair.left.legal_name }}</div>
+      <div class="meta">
+        {{ pair.left.source }}:{{ pair.left.source_id }}
+        {%- if pair.left.registration_authority %} · {{ pair.left.registration_authority }}
+          {{ pair.left.registered_as or '—' }}{% endif %}
+        {%- if pair.left.city %} · {{ pair.left.city }}{% endif %}
+      </div>
+    </div>
+    <div class="vs">vs</div>
+    <div>
+      <div class="name">{{ pair.right.legal_name }}</div>
+      <div class="meta">
+        {{ pair.right.source }}:{{ pair.right.source_id }}
+        {%- if pair.right.registration_authority %} · {{ pair.right.registration_authority }}
+          {{ pair.right.registered_as or '—' }}{% endif %}
+        {%- if pair.right.city %} · {{ pair.right.city }}{% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="row">
+    <span class="score">{{ '%.3f'|format(pair.score) }}</span>
+    <div class="bar" style="width:{{ (pair.score * 160)|round|int }}px"></div>
+    {% for variant in pair.variant_types %}
+      <span class="chip">{{ variant.replace('_', ' ') }}</span>
+    {% endfor %}
+  </div>
+</a>
+{% else %}
+<div class="card">The queue is empty. Every pair in this console has been decided or approved.</div>
+{% endfor %}
+{% endblock %}
