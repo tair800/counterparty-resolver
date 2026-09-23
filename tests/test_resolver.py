@@ -260,12 +260,24 @@ def test_the_score_is_the_sum_of_what_the_features_contributed() -> None:
 # -------------------------------------------------------------------------------- the decision
 
 
+#: Above every MATCH cut-off in the published sweep, whose highest is 0.98. The pair below
+#: has to clear this or the test is asserting nothing: a pair scoring 0.71 would stay out of
+#: the MATCH band under any threshold, and the test would pass against a resolver that had
+#: quietly restored one. `plant_breaches.py` found exactly that hole.
+ABOVE_EVERY_SWEPT_MATCH_THRESHOLD = 0.98
+
+
 def test_the_weighted_score_never_asserts_a_match_on_its_own() -> None:
     """ADR-002. Two names as alike as a score can make them still only reach REVIEW."""
-    left, right = record("Acme Global Holdings"), record("Acme Global Holding")
+    left = record("Acme Global Holdings", country="GB", city="London")
+    right = record("Acme Global Holding", country="GB", city="London")
 
     decision = resolve_pair(CandidatePair(pair_id="p", left=left, right=right))
 
+    assert decision.evidence.hard_signal is None, "this pair must be decided by the score"
+    assert decision.score > ABOVE_EVERY_SWEPT_MATCH_THRESHOLD, (
+        f"the pair scores {decision.score}, which no MATCH band would have accepted anyway"
+    )
     assert decision.decision is not Decision.MATCH
     assert decision.score >= THRESHOLD_NO_MATCH
 

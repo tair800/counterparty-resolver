@@ -39,9 +39,15 @@ class Breach:
     find: str
     replace: str
     expect_failure_in: list[str] = field(default_factory=list)
-    #: A whole-session refusal rather than a test failure: `conftest` raises `UsageError`, and
-    #: pytest reports that as an internal error rather than as a red test.
-    expect_collection_error: bool = False
+    #: Text the run has to print for the breach to count as caught. Needed where a red exit
+    #: code is not enough on its own -- a session refused at collection exits non-zero, and
+    #: so does a session where the guard did nothing and an unrelated test broke.
+    #:
+    #: The first version of this looked for the literal `UsageError`, which pytest never
+    #: prints: it renders one as `ERROR: <message>`. The harness reported the guard as
+    #: SURVIVED while the guard was in fact working, which is the same class of mistake the
+    #: harness exists to catch, made one level up.
+    expect_output: str = ""
 
 
 BREACHES: tuple[Breach, ...] = (
@@ -75,7 +81,7 @@ BREACHES: tuple[Breach, ...] = (
             "@pytest.mark.skip(reason='planted breach')\n"
             "def test_F_the_system_beats_the_best_predeclared_baseline() -> None:"
         ),
-        expect_collection_error=True,
+        expect_output="disabled by a mark",
     ),
     Breach(
         name="reintroduce-importorskip",
@@ -205,8 +211,8 @@ BREACHES: tuple[Breach, ...] = (
         name="silently-accept-a-new-known-limitation",
         guards="the set of accepted defects cannot grow by setting a flag",
         path="tests/adversarial_cases.json",
-        find='   "id": "diacritic-drift",\n   "expect": "match",',
-        replace='   "id": "diacritic-drift",\n   "known_limitation": true,\n   "expect": "match",',
+        find='   "id": "diacritic-drift",',
+        replace='   "id": "diacritic-drift",\n   "known_limitation": true,',
         expect_failure_in=[
             "tests/test_adversarial.py::test_the_known_limitations_are_exactly_the_ones_declared"
         ],
@@ -277,11 +283,8 @@ def main() -> int:
             path.write_text(_apply(breach, original.decode("utf-8")), encoding="utf-8", newline="")
             result = _run(breach.expect_failure_in or ["tests/test_kill_criteria.py"])
             noticed = result.returncode != 0
-            if breach.expect_collection_error:
-                noticed = noticed and (
-                    "UsageError" in result.stdout + result.stderr
-                    or "INTERNALERROR" in result.stdout + result.stderr
-                )
+            if breach.expect_output:
+                noticed = noticed and breach.expect_output in result.stdout + result.stderr
         finally:
             path.write_bytes(original)
 
@@ -290,7 +293,9 @@ def main() -> int:
         print(f"             guards: {breach.guards}")
         if not noticed:
             holes.append(breach)
-            print(f"             pytest said: {result.stdout.strip().splitlines()[-1:]}")
+            tail = (result.stdout + result.stderr).strip().splitlines()[-2:]
+            for line in tail:
+                print(f"             pytest said: {line}")
 
     still_dirty = subprocess.run(  # noqa: S603 - fixed argv
         ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False
