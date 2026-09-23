@@ -272,7 +272,9 @@ def main() -> int:
     if not selected:
         raise SystemExit(f"no breach named {arguments.only!r}")
 
-    dirty = subprocess.run(  # noqa: S603 - fixed argv
+    # S607: `git` is resolved from PATH on purpose. Pinning an absolute path would make
+    # this script work on one machine, and the command is a fixed argv with no shell.
+    dirty = subprocess.run(  # noqa: S607
         ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False
     ).stdout.strip()
     if dirty:
@@ -307,7 +309,7 @@ def main() -> int:
             for line in tail:
                 print(f"             pytest said: {line}")
 
-    still_dirty = subprocess.run(  # noqa: S603 - fixed argv
+    still_dirty = subprocess.run(  # noqa: S607
         ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False
     ).stdout.strip()
     if still_dirty:
