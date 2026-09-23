@@ -295,6 +295,76 @@ def test_unmerge_restores_the_exact_prior_state_including_source_linkage(
     assert [row[2] for row in sorted(after["merge_ledger"])] == ["merge", "unmerge"]
 
 
+def test_reversing_a_merge_restores_a_link_it_displaced(db: sqlite3.Connection) -> None:
+    """ "Restores the prior state" has to mean the prior state, not the empty one.
+
+    Merge A with B, then A with C, then reverse the second. The first version deleted A's link and
+    left it under no entity at all, because the merge that moved A had nowhere to record where A had
+    come from. `migrations.py` version 5 is that column, and this is the test it exists for.
+    """
+    first = ledger.merge(
+        db,
+        idempotency_key="m-1",
+        left=("gleif", "A"),
+        right=("gleif", "B"),
+        resolved_id="cp-1",
+        decision="match",
+        score=0.9,
+        evidence=[],
+        approver_id="ada.l",
+    )
+    after_first = _snapshot(db)
+
+    moved = ledger.merge(
+        db,
+        idempotency_key="m-2",
+        left=("gleif", "A"),
+        right=("gleif", "C"),
+        resolved_id="cp-2",
+        decision="match",
+        score=0.9,
+        evidence=[],
+        approver_id="ada.l",
+    )
+    assert ledger.resolved_id_for(db, "gleif", "A") == "cp-2"
+
+    ledger.unmerge(
+        db,
+        idempotency_key="u-2",
+        reverses_entry_id=int(moved["entry_id"]),
+        approver_id="ada.l",
+        reason="A belongs with B",
+    )
+
+    assert ledger.resolved_id_for(db, "gleif", "A") == "cp-1", (
+        "A was moved from cp-1 and the reversal has to put it back, not unlink it"
+    )
+    assert ledger.links_for(db, "cp-1") == [("gleif", "A"), ("gleif", "B")]
+    assert ledger.links_for(db, "cp-2") == []
+    assert _snapshot(db)["source_link"] == after_first["source_link"], (
+        "every source link is back exactly as the first merge left it"
+    )
+    assert int(first["entry_id"]) == int(
+        db.execute(
+            "SELECT linked_by_entry_id FROM source_link WHERE source = 'gleif' AND source_id = 'A'"
+        ).fetchone()[0]
+    ), "and it is attributed to the merge that actually made it"
+
+
+def test_the_migration_list_is_in_version_order() -> None:
+    """The literal is the record of what happened, and reading it out of order applies it wrongly.
+
+    Version 5 was first written above version 4 in the tuple. `migrate` stops at anything already
+    applied, so it ran 1, 2, 3, 5 and skipped 4 entirely -- the contract step never happened and the
+    next insert failed on a NOT NULL column nobody had dropped. `migrate` now sorts; this keeps the
+    file readable as history as well.
+    """
+    versions = [m.version for m in migrations.MIGRATIONS]
+
+    assert versions == sorted(versions), f"migrations are declared out of order: {versions}"
+    assert len(set(versions)) == len(versions), f"duplicate migration versions: {versions}"
+
+
 def test_unmerge_refuses_to_undo_the_middle_of_a_chain(db: sqlite3.Connection) -> None:
     """Repairing a later merge silently would be this function deciding what nobody approved."""
     first = ledger.merge(db, **MERGE)

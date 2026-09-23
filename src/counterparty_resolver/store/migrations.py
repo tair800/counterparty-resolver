@@ -121,6 +121,18 @@ MIGRATIONS: tuple[Migration, ...] = (
             "contracting now would drop the only copy of who approved them"
         ),
     ),
+    Migration(
+        version=5,
+        phase="expand",
+        description="record the source links a merge displaced, so a reversal can restore them",
+        # Additive, and it has to be: a merge that overwrote an earlier link had no column to write
+        # the old one into, so `unmerge` deleted the row instead of putting the earlier link back.
+        # Merging A with B and then A with C, then reversing the second, left A under nothing at all
+        # -- while `README.md` advertised an unmerge that restores the exact prior state. The column
+        # is what makes that sentence true. Rows written before it exists read as NULL, which the
+        # ledger treats as "displaced nothing", and that is the correct reading of them.
+        statements="ALTER TABLE merge_ledger ADD COLUMN displaced_links_json TEXT;",
+    ),
 )
 
 #: Words that change a table rather than read it. A migration naming a legacy table in one of these
@@ -176,7 +188,10 @@ def migrate(
     stamp = (now or dt.datetime.now(tz=dt.UTC)).isoformat(timespec="seconds")
     applied: list[Migration] = []
 
-    for migration in MIGRATIONS:
+    # Sorted, not trusted to the literal's order: writing a new step above an older one applied
+    # it first and skipped the older one entirely, because `migrate` stops at anything already
+    # applied. The list is the record; the version number is the order.
+    for migration in sorted(MIGRATIONS, key=lambda m: m.version):
         if migration.version <= current_version(connection):
             continue
         if target is not None and migration.version > target:

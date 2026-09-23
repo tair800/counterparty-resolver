@@ -145,6 +145,24 @@ BREACHES: tuple[Breach, ...] = (
         ],
     ),
     Breach(
+        name="unmerge-drops-a-displaced-link",
+        guards="a reversal restores a link the merge displaced, not just the link it created",
+        path="src/counterparty_resolver/store/ledger.py",
+        find='        for link in json.loads(original["displaced_links_json"] or "[]"):',
+        replace="        for link in []:",
+        expect_failure_in=[
+            "tests/test_store.py::test_reversing_a_merge_restores_a_link_it_displaced"
+        ],
+    ),
+    Breach(
+        name="migrations-declared-out-of-order",
+        guards="the migration list reads in version order, so `migrate` applies all of it",
+        path="src/counterparty_resolver/store/migrations.py",
+        find="        version=5,",
+        replace="        version=0,",
+        expect_failure_in=["tests/test_store.py::test_the_migration_list_is_in_version_order"],
+    ),
+    Breach(
         name="contract-without-the-precondition",
         guards="the contract step refuses while a row would lose its approver",
         path="src/counterparty_resolver/store/migrations.py",
