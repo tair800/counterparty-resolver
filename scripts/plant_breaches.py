@@ -148,7 +148,7 @@ BREACHES: tuple[Breach, ...] = (
         name="unmerge-drops-a-displaced-link",
         guards="a reversal restores a link the merge displaced, not just the link it created",
         path="src/counterparty_resolver/store/ledger.py",
-        find='        for link in json.loads(original["displaced_links_json"] or "[]"):',
+        find='        for link in json.loads(dict(original).get("displaced_links_json") or "[]"):',
         replace="        for link in []:",
         expect_failure_in=[
             "tests/test_store.py::test_reversing_a_merge_restores_a_link_it_displaced"
