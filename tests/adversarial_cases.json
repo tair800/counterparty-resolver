@@ -1,0 +1,265 @@
+{
+ "about": [
+  "Hand-built pairs, each one a case a naive matcher gets wrong, with the decision the resolver",
+  "reaches and the reason. These are NOT labels: nothing here enters the corpus, the evaluation or",
+  "any published metric. They are a regression suite for behaviours the aggregate cannot see,",
+  "because each of these shapes occurs a handful of times in 12,984 real pairs and breaking one",
+  "would move precision by 0.0002 and turn nothing red.",
+  "",
+  "`expect` is one of match / review / no_match, and is the decision the shipped resolver makes.",
+  "A case expecting `review` is asserting that the resolver declines, which is a real answer here.",
+  "",
+  "`known_limitation: true` marks a case where the recorded decision is NOT the one a person would",
+  "want. Those are kept, and kept visible, rather than deleted or quietly relabelled. The hold-out",
+  "was scored at commit b67b83e and ADR-001 fixes that no rule changes afterwards, so each of these",
+  "is a defect this build ships with and the next increment fixes -- which is a more useful thing",
+  "to publish than a suite engineered to be green."
+ ],
+ "cases": [
+  {
+   "id": "legal-form-spelling",
+   "expect": "match",
+   "why": "The same company written in two registries' conventions. Canonicalisation, not deletion.",
+   "left": {
+    "legal_name": "Acme Holdings Company Limited",
+    "country": "GB"
+   },
+   "right": {
+    "legal_name": "ACME HOLDINGS CO LTD.",
+    "country": "GB"
+   }
+  },
+  {
+   "id": "polish-legal-form",
+   "expect": "match",
+   "why": "`Sp. z o.o.` and its spelled-out form are one legal form; a token lookup never saw it.",
+   "left": {
+    "legal_name": "Nordic Capital Sp. z o.o.",
+    "country": "PL"
+   },
+   "right": {
+    "legal_name": "NORDIC CAPITAL SPOLKA Z OGRANICZONA ODPOWIEDZIALNOSCIA",
+    "country": "PL"
+   }
+  },
+  {
+   "id": "diacritic-drift",
+   "expect": "match",
+   "why": "One system stored the accent and the other did not. This is the commonest drift in GLEIF.",
+   "left": {
+    "legal_name": "Murowana Goślina S.A.",
+    "country": "PL"
+   },
+   "right": {
+    "legal_name": "MUROWANA GOSLINA SA",
+    "country": "PL"
+   }
+  },
+  {
+   "id": "identifier-agreement-across-different-names",
+   "expect": "match",
+   "why": "The registrar's number is the fact. The names disagreeing does not get a vote.",
+   "left": {
+    "legal_name": "Bloomberg Finance L.P.",
+    "registration_authority": "RA000585",
+    "registered_as": "01234567"
+   },
+   "right": {
+    "legal_name": "BLOOMBERG FINANCE LIMITED",
+    "registration_authority": "RA000585",
+    "registered_as": "1234567"
+   }
+  },
+  {
+   "id": "identifier-conflict-under-identical-names",
+   "expect": "no_match",
+   "why": "One registrar, two numbers, two companies. The case the whole hard-signal order exists for.",
+   "left": {
+    "legal_name": "PHOENIX HOLDINGS LIMITED",
+    "registration_authority": "RA000585",
+    "registered_as": "00445790"
+   },
+   "right": {
+    "legal_name": "PHOENIX HOLDINGS LIMITED",
+    "registration_authority": "RA000585",
+    "registered_as": "00445791"
+   }
+  },
+  {
+   "id": "sec-series-sharing-one-name",
+   "expect": "no_match",
+   "why": "Two SEC series, one product name. Exact name agreement used to win here and was wrong.",
+   "left": {
+    "legal_name": "High Yield Strategy Fund",
+    "registration_authority": "RA000665",
+    "registered_as": "S000016688"
+   },
+   "right": {
+    "legal_name": "High Yield Strategy Fund",
+    "registration_authority": "RA000665",
+    "registered_as": "S000015881"
+   }
+  },
+  {
+   "id": "fund-vintage-designator",
+   "expect": "no_match",
+   "why": "95% identical strings naming two products. A similarity average cannot see the year.",
+   "left": {
+    "legal_name": "Target Retirement 2027 CIT",
+    "country": "US"
+   },
+   "right": {
+    "legal_name": "Target Retirement 2037 CIT",
+    "country": "US"
+   }
+  },
+  {
+   "id": "fund-series-roman-numeral",
+   "expect": "no_match",
+   "why": "`I` against `II` is the entire identity of these two partnerships.",
+   "left": {
+    "legal_name": "Pan Ivy Growth Partners I LLC",
+    "country": "US"
+   },
+   "right": {
+    "legal_name": "Pan Ivy Growth Partners II LLC",
+    "country": "US"
+   }
+  },
+  {
+   "id": "trust-with-shared-boilerplate",
+   "expect": "review",
+   "why": "0.87 Jaro-Winkler from a long shared prefix. Distinctive-token weighting pulls it to 0.729 -- out of any merge band and into a person's queue, which is what that feature is for.",
+   "left": {
+    "legal_name": "Schindlers Reg. Treuunternehmen as Trustee of the Brahms Trust"
+   },
+   "right": {
+    "legal_name": "Schindlers Reg. Treuunternehmen as Trustee of the Clandeboye Trust"
+   }
+  },
+  {
+   "id": "suffix-on-one-side-only",
+   "expect": "review",
+   "why": "A parenthesised code appended by one system; the same company. The discriminator rule correctly stops denying it (ADR-002), but nothing promotes it either: with THRESHOLD_MATCH None only a registrar's number or an exact name can assert a match, and neither is present. A person has to confirm it.",
+   "left": {
+    "legal_name": "NB Holdings Corporation (7690)",
+    "country": "US"
+   },
+   "right": {
+    "legal_name": "NB Holdings Corporation",
+    "country": "US"
+   },
+   "known_limitation": true
+  },
+  {
+   "id": "abbreviated-legal-form-that-looks-like-a-designator",
+   "expect": "review",
+   "why": "`P/L` is an abbreviation of `Pty Ltd` and splits into two single letters. The discriminator rule no longer denies the pair, but `p l` is not in the legal-form table, so the names never canonicalise to the same string and the pair stops at REVIEW. Adding the spelling is a rule change, and the hold-out is spent.",
+   "left": {
+    "legal_name": "Gladiator Equities P/L",
+    "country": "AU"
+   },
+   "right": {
+    "legal_name": "Gladiator Equities Pty Ltd",
+    "country": "AU"
+   },
+   "known_limitation": true
+  },
+  {
+   "id": "ampersand-against-the-word",
+   "expect": "match",
+   "why": "`&` is expanded rather than dropped, so `Smith & Nephew` reaches `Smith and Nephew`.",
+   "left": {
+    "legal_name": "Smith & Nephew PLC",
+    "country": "GB"
+   },
+   "right": {
+    "legal_name": "SMITH AND NEPHEW PUBLIC LIMITED COMPANY",
+    "country": "GB"
+   }
+  },
+  {
+   "id": "same-number-different-registries",
+   "expect": "no_match",
+   "why": "Two registries issue the same digits to unrelated companies. Authority is half the key.",
+   "left": {
+    "legal_name": "Alpha Trading",
+    "registration_authority": "RA000585",
+    "registered_as": "01234567"
+   },
+   "right": {
+    "legal_name": "Beta Logistics",
+    "registration_authority": "RA000602",
+    "registered_as": "01234567"
+   }
+  },
+  {
+   "id": "one-substantive-token-apart",
+   "expect": "review",
+   "why": "`Global Credit` against `International Bond`. Genuinely ambiguous; a person should look.",
+   "left": {
+    "legal_name": "Future Directions Global Credit Fund",
+    "country": "AU"
+   },
+   "right": {
+    "legal_name": "Future Directions International Bond Fund",
+    "country": "AU"
+   }
+  },
+  {
+   "id": "extra-word-inside-a-fund-name",
+   "expect": "review",
+   "why": "A merger or a rename, and nothing in the record says which. Declining is the answer.",
+   "left": {
+    "legal_name": "BlackRock Municipal Income Trust",
+    "country": "US"
+   },
+   "right": {
+    "legal_name": "BlackRock Municipal Income Investment Trust",
+    "country": "US"
+   }
+  },
+  {
+   "id": "legal-form-change-on-conversion",
+   "expect": "review",
+   "why": "Companies convert. Denying on the legal form alone cost 76 adjudicated duplicates (ADR-002).",
+   "left": {
+    "legal_name": "Scollard Energy Inc.",
+    "country": "CA"
+   },
+   "right": {
+    "legal_name": "Scollard Energy Ltd.",
+    "country": "CA"
+   }
+  },
+  {
+   "id": "acronym-against-its-expansion",
+   "expect": "no_match",
+   "why": "The resolver gets this wrong. `acronym_match` carries 0.04 of the weight -- argued from meaning before any result existed -- and 0.04 cannot lift a pair whose strings share almost nothing to 0.66. It scores 0.389 and is denied. Raising that weight is a rule change against a spent hold-out, so it is published as a miss instead.",
+   "left": {
+    "legal_name": "IBM",
+    "country": "US"
+   },
+   "right": {
+    "legal_name": "International Business Machines",
+    "country": "US"
+   },
+   "known_limitation": true
+  },
+  {
+   "id": "unrelated-companies-that-share-a-common-word",
+   "expect": "no_match",
+   "why": "`Holdings` is not evidence. Without the frequency table it would look like overlap.",
+   "left": {
+    "legal_name": "Aardvark Holdings Limited",
+    "country": "NO",
+    "city": "Oslo"
+   },
+   "right": {
+    "legal_name": "Zeppelin Holdings Limited",
+    "country": "PE",
+    "city": "Lima"
+   }
+  }
+ ]
+}

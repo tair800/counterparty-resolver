@@ -37,6 +37,10 @@ ignore = ["PLR0913"]
 # disconnect the test from the criterion it exists to enforce.
 "tests/*" = ["S101", "PLR2004", "N802"]
 "scripts/*" = ["S101", "PLR2004"]
+# S608: the crosswalk views are assembled from module constants in `store/schema.py` -- a column
+# count and a registration-authority code. No value here comes from a request, and writing the
+# ten UNION branches by hand would let them drift from the schema they unpivot.
+"src/counterparty_resolver/store/crosswalk.py" = ["S608"]
 
 [tool.mypy]
 python_version = "3.12"
