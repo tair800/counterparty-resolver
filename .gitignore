@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.env
+*.pem
+keys/
+
+# Fetched source data is never committed. `make corpus` re-fetches it, and
+# docs/provenance.md records exactly what from where under which licence.
+data/raw/
+node_modules/
+.next/
+out/
