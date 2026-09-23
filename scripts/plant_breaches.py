@@ -155,6 +155,54 @@ BREACHES: tuple[Breach, ...] = (
         ],
     ),
     Breach(
+        name="approver-identity-from-the-request",
+        guards="the ledger records the identity the token bought, not one the client asserted",
+        path="src/counterparty_resolver/api/app.py",
+        find='    return "steward"',
+        replace='    return str(request.headers.get("x-approver-id") or "steward")',
+        expect_failure_in=["tests/test_api.py::test_the_ledger_records_the_tokens_identity"],
+    ),
+    Breach(
+        name="migration-runs-outside-a-transaction",
+        guards="a failed migration cannot leave the append-only trigger dropped",
+        path="src/counterparty_resolver/store/migrations.py",
+        find='    connection.execute("BEGIN IMMEDIATE")',
+        replace='    connection.execute("SELECT 1")',
+        expect_failure_in=[
+            "tests/test_store.py::test_a_failed_migration_leaves_no_trace_of_itself"
+        ],
+    ),
+    Breach(
+        name="writer-names-a-fixed-set-of-columns",
+        guards="the shipped writer works at every step of its own expand/contract rename",
+        path="src/counterparty_resolver/store/ledger.py",
+        find='    if "approved_by" in present:',
+        replace="    if False:",
+        expect_failure_in=[
+            "tests/test_store.py::test_the_shipped_writer_works_at_every_step_of_the_rename"
+        ],
+    ),
+    Breach(
+        name="legacy-guard-ignores-row-changes",
+        guards="the brownfield constraint covers a source system's rows, not only its shape",
+        path="src/counterparty_resolver/store/migrations.py",
+        find="_READ_ONLY = re.compile(",
+        replace='_READ_ONLY = re.compile(  # type: ignore[assignment]\n    r"^.",',
+        expect_failure_in=[
+            "tests/test_store.py::test_the_guard_catches_every_way_of_writing_to_a_source_system"
+        ],
+    ),
+    Breach(
+        name="candidate-recall-counts-what-is-not-generated",
+        guards="published candidate recall is the recall of the generator, not of key sharing",
+        path="src/counterparty_resolver/evaluate.py",
+        find="        if frozenset((pair.left.key, pair.right.key)) in emitted:",
+        replace="        if shared:",
+        expect_failure_in=[
+            "tests/test_evaluation_method.py::test_candidate_recall_counts_only_emitted_pairs"
+        ],
+    ),
+    Breach(
         name="migrations-declared-out-of-order",
         guards="the migration list reads in version order, so `migrate` applies all of it",
         path="src/counterparty_resolver/store/migrations.py",
@@ -271,6 +319,25 @@ def _apply(breach: Breach, text: str) -> str:
     return text.replace(breach.find, breach.replace, 1)
 
 
+def _git_status() -> str:
+    """The porcelain status, or an exception.
+
+    `check=True` matters more here than anywhere else in the repository. Both callers previously
+    read only `stdout` with `check=False`, so a git that failed for any reason -- not a repository,
+    a locked index, a broken HEAD -- returned an empty string, which reads as "clean". The harness
+    that guards every other guard would then have verified neither its precondition nor its
+    postcondition and still printed "the working tree is unchanged".
+    """
+    # S603/S607: fixed argv, no shell, `git` from PATH on purpose.
+    return subprocess.run(
+        ["git", "status", "--porcelain"],  # noqa: S607
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+
+
 def _run(node_ids: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(  # noqa: S603 - fixed argv, no shell
         [sys.executable, "-m", "pytest", "-x", "-q", "--no-header", *node_ids],
@@ -292,13 +359,7 @@ def main() -> int:
 
     # S607: `git` is resolved from PATH on purpose. Pinning an absolute path would make
     # this script work on one machine, and the command is a fixed argv with no shell.
-    dirty = subprocess.run(
-        ["git", "status", "--porcelain"],  # noqa: S607
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
+    dirty = _git_status()
     if dirty:
         print(
             "working tree is not clean; the revert check at the end cannot mean anything:\n" + dirty
@@ -331,13 +392,7 @@ def main() -> int:
             for line in tail:
                 print(f"             pytest said: {line}")
 
-    still_dirty = subprocess.run(
-        ["git", "status", "--porcelain"],  # noqa: S607
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    ).stdout.strip()
+    still_dirty = _git_status()
     if still_dirty:
         print("\nTHE WORKING TREE WAS NOT RESTORED. Revert it before doing anything else:")
         print(still_dirty)

@@ -105,10 +105,10 @@ def _snapshot(connection: sqlite3.Connection) -> dict[str, list[tuple[Any, ...]]
     }
 
 
-def _statements_by_table(ddl: str) -> dict[str, str]:
+def _statements_by_table(ddl: tuple[str, ...]) -> dict[str, str]:
     """`CREATE TABLE x (...)` statements keyed by table name."""
     out: dict[str, str] = {}
-    for statement in (s.strip() for s in ddl.split(";")):
+    for statement in (s.strip() for s in ddl):
         if match := re.match(r"CREATE TABLE (\w+)", statement, re.IGNORECASE):
             out[match.group(1)] = statement
     return out
@@ -154,6 +154,66 @@ def test_the_legacy_schema_in_a_migrated_database_is_the_one_that_was_declared(
     assert live == declared, "a legacy table in the database is not the one that was declared"
 
 
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "ALTER TABLE legacy_gleif ADD COLUMN resolved_id TEXT",
+        "ALTER TABLE main.legacy_gleif ADD COLUMN resolved_id TEXT",
+        "DELETE FROM legacy_gleif",
+        "UPDATE legacy_gleif SET legal_name = ''",
+        "INSERT INTO legacy_companies_house (company_number, company_name) VALUES ('1', 'x')",
+        "DROP TABLE legacy_gleif_other_name",
+        "CREATE TRIGGER t AFTER INSERT ON legacy_gleif BEGIN SELECT 1; END",
+    ],
+)
+def test_the_guard_catches_every_way_of_writing_to_a_source_system(sql: str) -> None:
+    """Schema *and* rows. The brownfield constraint is about the data as much as the shape.
+
+    An earlier version matched on the verb and took the first word after it, which let
+    `ALTER TABLE main.legacy_gleif` through (it captured `main`) and did not look at DML at all --
+    so `DELETE FROM legacy_gleif` passed the guard, passed the fingerprint test, and would have run.
+    """
+    assert migrations.statements_touching_legacy_tables(sql), f"not caught: {sql}"
+
+
+def test_the_guard_permits_reading_a_legacy_table() -> None:
+    """The crosswalk views do nothing else, and they are how the constraint is satisfied."""
+    for sql in (
+        "SELECT * FROM legacy_gleif",
+        "CREATE VIEW v AS SELECT lei FROM legacy_gleif",
+    ):
+        assert not migrations.statements_touching_legacy_tables(sql), f"wrongly refused: {sql}"
+
+
+def test_a_failed_migration_leaves_no_trace_of_itself(db: sqlite3.Connection) -> None:
+    """DDL is transactional here, and it took a fix to make that true.
+
+    Migration 3 drops the append-only trigger, backfills, and puts the trigger back. Under
+    `executescript` -- which COMMITs before it runs and lets each statement autocommit -- a failure
+    in the middle left the ledger permanently mutable with `schema_version` still reading 2, and the
+    migration could not even be re-run because the trigger it drops was gone.
+    """
+    ledger.merge(db, **MERGE)  # a BEFORE UPDATE trigger fires per row, so there has to be one
+    before = sorted(
+        str(r[0]) for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+    )
+    version = migrations.current_version(db)
+
+    with pytest.raises(sqlite3.OperationalError), migrations.transaction(db):
+        db.execute("DROP TRIGGER merge_ledger_is_append_only_update")
+        db.execute("SELECT this_function_does_not_exist()")
+
+    after = sorted(
+        str(r[0]) for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'trigger'")
+    )
+    assert after == before, (
+        "the trigger came back; a failed migration may not leave the ledger open"
+    )
+    assert migrations.current_version(db) == version
+    with pytest.raises(sqlite3.IntegrityError, match="append-only"):
+        db.execute("UPDATE merge_ledger SET decision = 'no_match'")
+
+
 def test_a_migration_that_alters_a_legacy_table_is_refused(
     db: sqlite3.Connection, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -162,7 +222,7 @@ def test_a_migration_that_alters_a_legacy_table_is_refused(
         version=99,
         phase="expand",
         description="planted breach: widen a source system's table",
-        statements="ALTER TABLE legacy_gleif ADD COLUMN resolved_id TEXT;",
+        statements=("ALTER TABLE legacy_gleif ADD COLUMN resolved_id TEXT",),
     )
     assert migrations.statements_touching_legacy_tables(bad.statements)
     monkeypatch.setattr(migrations, "MIGRATIONS", (*migrations.MIGRATIONS, bad))
@@ -188,16 +248,52 @@ def _old_code_writes(connection: sqlite3.Connection, key: str) -> None:
     connection.commit()
 
 
-def test_the_database_is_usable_at_every_step_of_the_rename() -> None:
-    """Old shape and new shape both work against the expanded schema. That is the point of it."""
+@pytest.mark.parametrize("step", [1, 2, 3, 4, None])
+def test_the_shipped_writer_works_at_every_step_of_the_rename(step: int | None) -> None:
+    """The point of expand/contract, asserted by **writing** rather than by reading `PRAGMA`.
+
+    The earlier version of this test checked that two column names existed and then wrote one row
+    through `_old_code_writes` -- the *old* shape. It never called `ledger.merge`, so it passed
+    against a writer that could not insert at steps 2 or 3 at all: `approved_by` is `NOT NULL` and
+    the writer did not fill it, so every merge during the rollout failed with a 500. The window the
+    rename exists to remove was the only window the shipped writer could not survive.
+    """
+    db = crosswalk.connect(target=step)
+
+    entry = ledger.merge(
+        db,
+        idempotency_key="m-1",
+        left=("gleif", "A"),
+        right=("gleif", "B"),
+        resolved_id="cp-1",
+        decision="match",
+        score=0.9,
+        evidence=[{"feature": "identifier_agreement", "detail": "x"}],
+        approver_id="ada.l",
+    )
+    ledger.unmerge(
+        db,
+        idempotency_key="u-1",
+        reverses_entry_id=int(entry["entry_id"]),
+        approver_id="ada.l",
+        reason="wrong",
+    )
+
+    assert ledger.links_for(db, "cp-1") == []
+    columns = {row[1] for row in db.execute("PRAGMA table_info(merge_ledger)")}
+    if "approved_by" in columns:
+        # The transition phase: old readers still read the old column, so it must be filled.
+        written = db.execute("SELECT approved_by FROM merge_ledger ORDER BY entry_id").fetchone()[0]
+        assert written == "ada.l", "the old column has to carry the approver while it exists"
+
+
+def test_the_expand_step_adds_without_removing() -> None:
+    """A rolling deploy needs both shapes readable at once, which is what "expand" means."""
     expanded = crosswalk.connect(target=2)
     columns = {row[1] for row in expanded.execute("PRAGMA table_info(merge_ledger)")}
 
-    assert {"approved_by", "approver_id"} <= columns, (
-        "the expand step must add the new column without removing the old one, or a rolling "
-        "deploy has a window where the running code cannot read the table"
-    )
-    _old_code_writes(expanded, "old-code")  # the old shape still writes successfully
+    assert {"approved_by", "approver_id"} <= columns
+    _old_code_writes(expanded, "old-code")  # and the old shape still writes successfully
 
     contracted = crosswalk.connect()
     columns = {row[1] for row in contracted.execute("PRAGMA table_info(merge_ledger)")}

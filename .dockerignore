@@ -1,0 +1,19 @@
+# The image copies an explicit file list, so nothing below can reach it. This is about the build
+# *context*: without it, `docker build .` uploads the virtualenv, the git history, every cache and
+# the raw GLEIF payloads under data/ to the builder on every run — and it removes the safety margin
+# that the explicit COPY list is providing.
+.git
+.github
+.venv
+.mypy_cache
+.pytest_cache
+.ruff_cache
+__pycache__
+*.py[cod]
+.env
+data
+docs
+tests
+scripts
+*.md
+!README.md

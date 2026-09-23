@@ -24,6 +24,11 @@ from counterparty_resolver.evaluate import (
     score_baseline,
     score_system,
 )
+from counterparty_resolver.normalize import (
+    normalize_identifier,
+    normalize_name,
+    strip_legal_form,
+)
 from counterparty_resolver.resolve import THRESHOLD_MATCH, THRESHOLD_NO_MATCH
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -60,6 +65,65 @@ def _arm(
             total_records=total_records,
             identifier_frequency=identifier_frequency,
         ),
+    }
+
+
+def _tables(pairs: list[CandidatePair]) -> tuple[dict[str, int], dict[str, int], int]:
+    """Token and identifier document frequency over exactly these pairs' records."""
+    records = {r.key: r for p in pairs for r in (p.left, p.right)}
+    tokens: dict[str, int] = {}
+    identifiers: dict[str, int] = {}
+    for record in records.values():
+        for token in set(strip_legal_form(normalize_name(record.legal_name)).split()):
+            tokens[token] = tokens.get(token, 0) + 1
+        number = normalize_identifier(record.registered_as)
+        authority = (record.registration_authority or "").strip().upper()
+        if number and authority:
+            key = f"{authority}|{number}"
+            identifiers[key] = identifiers.get(key, 0) + 1
+    return tokens, identifiers, len(records)
+
+
+def _prior_sensitivity(
+    development: list[CandidatePair], holdout: list[CandidatePair]
+) -> dict[str, Any]:
+    """What the corpus-wide frequency tables are worth, measured rather than argued about.
+
+    `distinctive_token_agreement` and the identifier-distinctiveness guard both read tables computed
+    over **every** record in the corpus, held-out records included. No label is used, so this is not
+    label leakage -- but it is information from the hold-out reaching the scoring of the hold-out,
+    and a project that says "there is no fitted parameter to overfit" owes the reader the size of it
+    rather than the argument.
+
+    So both are published: the shipped configuration, and the same system with tables built from
+    development records only. The second is the conservative number.
+    """
+    dev_tokens, dev_identifiers, dev_records = _tables(development)
+    arms = {}
+    for name, (tokens, identifiers, records) in {
+        "corpus_wide_priors": _tables(development + holdout),
+        "development_only_priors": (dev_tokens, dev_identifiers, dev_records),
+    }.items():
+        arms[name] = {
+            "development": score_system(
+                development,
+                frequency=tokens,
+                total_records=records,
+                identifier_frequency=identifiers,
+            ),
+            "holdout": score_system(
+                holdout, frequency=tokens, total_records=records, identifier_frequency=identifiers
+            ),
+        }
+    return {
+        "note": (
+            "Token and identifier document frequency are computed over every record in the corpus, "
+            "both splits. No label is involved, so this is not label leakage -- but it is "
+            "information from the held-out records reaching their own scoring, and the "
+            "development_only_priors arm is what the numbers are without it. That arm is the "
+            "conservative one and is the one the README quotes as the floor."
+        ),
+        "arms": arms,
     }
 
 
@@ -133,11 +197,21 @@ def main() -> int:
     if args.score_holdout:
         holdout = [_pair(by_id[i]) for i in split["holdout_pair_ids"]]
         report["holdout"] = _arm(holdout, frequency, total_records, identifier_frequency)
+        report["prior_sensitivity"] = _prior_sensitivity(development, holdout)
         report["holdout"]["note"] = (
             "Scored once, after the split was committed. ADR-001 fixes that no rule, threshold, "
             "feature or normalisation changes on the basis of this number."
         )
         _print_arm("HELD OUT (scored once)", report["holdout"])
+
+        print("\n  the corpus-wide frequency tables, priced:")
+        for name, arm in report["prior_sensitivity"]["arms"].items():
+            for side in ("development", "holdout"):
+                result = arm[side]
+                print(
+                    f"    {name:24} {side:12} precision {result['precision']:.4f}  "
+                    f"false merges {result['false_positives']}"
+                )
 
     out = ARTIFACTS / "evaluation.json"
     out.write_text(json.dumps(report, indent=1) + "\n", encoding="utf-8")

@@ -18,6 +18,10 @@ Labels are **GLEIF duplicate adjudications**: an LEI Issuing Organisation record
 duplicate of another. They are not ours. The kill test, the baselines and the hold-out policy were
 all fixed in [`DECISIONS.md`](DECISIONS.md) at commit `b620131`, **before the package existed**.
 
+**12,984 labelled pairs over 12,853 records** — 6,492 registrar adjudications and 6,492
+similarity-mined hard negatives — split into development and hold-out over entity clusters, not over
+pairs, so no entity appears on both sides.
+
 ### Development — 10,532 pairs, 5,266 positive, 5,266 negative
 
 | arm | precision | recall | F1 | review | false merges |
@@ -37,12 +41,25 @@ all fixed in [`DECISIONS.md`](DECISIONS.md) at commit `b620131`, **before the pa
 | **system** | **0.9986** | 0.5808 | 0.7344 | **1** |
 
 **Development to hold-out, every metric moves by less than 0.005.** That is the number this project
-is actually about, and the reason it holds is not skill: **there is no fitted parameter to overfit.**
-The seven feature weights were argued from the meaning of each feature before any result existed and
-have not moved since. Two numbers were chosen from a development curve, and neither is a fit:
-`THRESHOLD_MATCH` was set to `None` — the band was removed rather than tuned — and
+is actually about. The seven feature weights were argued from the meaning of each feature before any
+result existed and have not moved since; the two numbers chosen from a development curve are not
+fits either — `THRESHOLD_MATCH` was set to `None`, which removes the band rather than tuning it, and
 `THRESHOLD_NO_MATCH` provably cannot move precision, recall or F1, which the published sweep shows
 as an identical row repeated down the whole column.
+
+**One thing does cross the split, and it is priced rather than argued about.** The document-frequency
+tables behind `distinctive_token_agreement` and the identifier-distinctiveness guard are computed
+over every record in the corpus, held-out records included. No label is involved, so it is not label
+leakage — but it is information from the held-out records reaching their own scoring:
+
+| | development precision | hold-out precision | hold-out false merges |
+|---|---|---|---|
+| corpus-wide priors (the rows above) | 0.9980 | 0.9986 | 1 |
+| development-only priors | 0.9977 | 0.9972 | 2 |
+
+Both arms are computed by `make evaluate-holdout` and published under `prior_sensitivity`. **0.9972
+is the floor**, the kill test passes under either, and a reader who considers corpus-wide priors a
+leak should read the second row.
 
 ### Three things this table says that are not flattering, and are not hidden
 
@@ -54,17 +71,32 @@ as an identical row repeated down the whole column.
 - **The hold-out's negatives are easier than development's** — mean name similarity 0.8147 against
   0.9037 — so its absolute precision is not comparable to development's. The development number is
   the one quoted everywhere in this repository.
+- **`fuzzy_name_only_0.90` is scored by a corpus selected against it.** Hard negatives are ranked by
+  Jaro-Winkler over normalised names, which is exactly that baseline's decision function, so the
+  miner is its adversary by construction — which is what its 0.5936 against 0.8890 across the two
+  splits is showing. The kill test turns on `identifier_first`, which the mining metric does not
+  touch, so the criterion is unaffected; but that row is not a fair measurement.
 
 ### Candidate generation, which caps everything above
 
 | | |
 |---|---|
-| recall | **0.9223** — 4,857 of 5,266 adjudicated duplicates share a blocking key |
-| reduction ratio | 0.995521 — 243,336 candidates from 54,324,676 possible pairs |
-| recovered by | `nameprefix` 3,940 · `token` 3,608 · `postal` 2,797 · `acronym` 2,580 · `regid` 2,062 |
+| recall | **0.9138** — 4,812 of 5,266 adjudicated duplicates are actually emitted as candidates |
+| dropped by the block-size ceiling | 45 — pairs that share a key and are still never generated |
+| reduction ratio | 0.995521 — 243,336 candidates from 54,324,676 possible pairs, over 10,424 records |
 
 Reported on its own because a resolver cannot recover a true match blocking never surfaced. The
 reduction ratio is beside it because recall alone is trivially maximised by blocking on nothing.
+
+Recall here is measured against **what `candidate_pairs` emits**, not against whether two records
+share a key. Those are different questions — `blocking.py` skips any block over `MAX_BLOCK_SIZE` —
+and the looser one reports 0.9223. Reporting it would be counting 45 pairs as surfaced that the
+system never generates.
+
+**The record pool is not a counterparty master.** Every one of those 10,424 records participates in
+an adjudicated duplicate, because the corpus is built from GLEIF's `DUPLICATE` records and their
+successors. The reduction ratio is therefore measured over a pool already filtered to duplicates,
+and is not the number the same blocking would achieve over a real master file.
 
 ---
 
@@ -82,12 +114,19 @@ read afterwards.**
 4. **A weighted sum over seven interpretable features**, which decides **REVIEW or NO_MATCH** and
    never MATCH.
 
-Two of those deserve their own sentence:
+Two of those deserve their own sentence, and one absence does.
 
 **Identifier agreement is only a fact when the identifier identifies.** Every Allianz fund at
 RA000665 carries the same `registeredAs`, so the rule asserted that a small-cap equity fund and a
 bond fund were one company — 40 false merges. Agreement now requires the number to appear on at most
 two records corpus-wide, which is what a duplicate and its successor look like.
+
+**Prior names are carried and never consulted.** The crosswalk unpivots Companies House's ten
+`previous_name_*` columns and GLEIF's `otherNames` array into one shape, and the console renders
+them — but no feature and no hard signal reads `other_names`. That is a real gap rather than a
+design choice: of the 2,234 development positives the system does not match, **324 have an exact
+normalised alias match**, against one such collision across all 5,266 negatives. Using it is a rule
+change against a spent hold-out, so it is the first thing the next corpus buys.
 
 **The weighted score never asserts a match**, and that is a measurement rather than a stance. A
 MATCH band at 0.86 decided 234 development pairs, 151 correctly and 83 wrongly — 0.645 precision
@@ -160,7 +199,7 @@ record of who approved that merge.
 
 ```bash
 uv sync
-uv run python -m pytest                          # 99 tests, no network
+uv run python -m pytest                          # 131 tests, no network
 uv run uvicorn counterparty_resolver.api.app:app # read-only console on :8000
 CR_APPROVER_TOKEN=$(openssl rand -hex 16) uv run uvicorn counterparty_resolver.api.app:app
 ```
@@ -206,11 +245,12 @@ duplicates nobody has adjudicated yet. `TIFFANY AND COMPANY` at RA000628 against
 RA000602 is labelled a negative and is almost certainly one company. Every arm is charged for these,
 and arms that decide more are charged more. **Published precision is a floor, not an estimate.**
 
-Three adversarial cases ship failing, marked `known_limitation` in
+Three adversarial cases are published as **characterised misses**, marked `known_limitation` in
 [`tests/adversarial_cases.json`](tests/adversarial_cases.json) — most notably `IBM` against
-`International Business Machines`, which the resolver denies at 0.389. The hold-out was scored at
-`b67b83e` and ADR-001 forbids changing a rule afterwards, so they are published as misses rather
-than fixed into a green suite.
+`International Business Machines`, which the resolver denies at 0.389. Their `expect` field records
+what the resolver *does*, not what a person would want, so the suite is green on them and the file
+says why. The hold-out was scored at `b67b83e` and ADR-001 forbids changing a rule afterwards, so
+they are documented rather than fixed.
 
 ---
 
@@ -228,6 +268,14 @@ Recorded so it cannot look like an omission discovered later. `PORTFOLIO_BLUEPRI
 | PostgreSQL | SQLite. The blueprint's own constraint for this increment is no Postgres where files suffice, and the resolution layer is one process with one writer. |
 
 ---
+
+## Every number here is checked against the artifact
+
+`tests/test_published_numbers.py` parses the result tables above and fails the build when a cell
+disagrees with `artifacts/evaluation.json`. It exists because a README is the one surface in this
+repository that was a promise rather than a mechanism, and two reviews found four stale or
+overstated claims there while finding none in the code's guarantees. `DECISIONS.md` ADR-004 lists
+all of them.
 
 ## Layout
 

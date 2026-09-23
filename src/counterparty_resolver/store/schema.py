@@ -23,6 +23,7 @@ with a real Companies House company number in `registered_as`, which is the cros
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Iterable
 
 __all__ = [
     "LEGACY_FINGERPRINT",
@@ -42,8 +43,12 @@ _PREVIOUS_NAME_COLUMNS = ",\n    ".join(
     f"previous_name_{n} TEXT" for n in range(1, COMPANIES_HOUSE_PREVIOUS_NAME_COLUMNS + 1)
 )
 
-LEGACY_SCHEMA = f"""
-CREATE TABLE legacy_gleif (
+#: **Statements, not a script.** `executescript` issues a COMMIT before it runs and lets each
+#: statement autocommit, so a script that fails half way leaves the database in the state it
+#: reached. Every DDL in this package is therefore a tuple, executed one statement at a time
+#: inside one explicit transaction -- see `migrations.transaction`.
+LEGACY_SCHEMA: tuple[str, ...] = (
+    """CREATE TABLE legacy_gleif (
     lei TEXT PRIMARY KEY,
     legal_name TEXT NOT NULL,
     legal_form TEXT,
@@ -55,16 +60,14 @@ CREATE TABLE legacy_gleif (
     registered_as TEXT,
     registration_status TEXT,
     successor_lei TEXT
-);
-
-CREATE TABLE legacy_gleif_other_name (
+)""",
+    """CREATE TABLE legacy_gleif_other_name (
     lei TEXT NOT NULL REFERENCES legacy_gleif(lei),
     name_type TEXT NOT NULL,
     name TEXT NOT NULL,
     PRIMARY KEY (lei, name_type, name)
-);
-
-CREATE TABLE legacy_companies_house (
+)""",
+    f"""CREATE TABLE legacy_companies_house (
     company_number TEXT PRIMARY KEY,
     company_name TEXT NOT NULL,
     company_status TEXT,
@@ -73,8 +76,8 @@ CREATE TABLE legacy_companies_house (
     post_code TEXT,
     address_line_1 TEXT,
     {_PREVIOUS_NAME_COLUMNS}
-);
-"""
+)""",
+)
 
 #: Version 1 of the layer this project owns. Everything in it is **additive**: it references the
 #: legacy tables and never modifies them.
@@ -82,15 +85,14 @@ CREATE TABLE legacy_companies_house (
 #: `merge_ledger` is append-only by construction, not by convention -- there is no column to update
 #: and the triggers below refuse UPDATE and DELETE outright. A merge and its reversal are two rows,
 #: so the history of a decision survives the decision being wrong.
-RESOLUTION_SCHEMA_V1 = """
-CREATE TABLE schema_version (
+RESOLUTION_SCHEMA_V1: tuple[str, ...] = (
+    """CREATE TABLE schema_version (
     version INTEGER PRIMARY KEY,
     applied_at TEXT NOT NULL,
     phase TEXT NOT NULL,
     description TEXT NOT NULL
-);
-
-CREATE TABLE merge_ledger (
+)""",
+    """CREATE TABLE merge_ledger (
     entry_id INTEGER PRIMARY KEY AUTOINCREMENT,
     idempotency_key TEXT NOT NULL UNIQUE,
     action TEXT NOT NULL CHECK (action IN ('merge', 'unmerge')),
@@ -105,43 +107,40 @@ CREATE TABLE merge_ledger (
     evidence_json TEXT NOT NULL,
     approved_by TEXT NOT NULL,
     recorded_at TEXT NOT NULL
-);
-
-CREATE INDEX merge_ledger_resolved ON merge_ledger(resolved_id);
-CREATE INDEX merge_ledger_left ON merge_ledger(left_source, left_id);
-CREATE INDEX merge_ledger_right ON merge_ledger(right_source, right_id);
-
-CREATE TRIGGER merge_ledger_is_append_only_update
+)""",
+    "CREATE INDEX merge_ledger_resolved ON merge_ledger(resolved_id)",
+    "CREATE INDEX merge_ledger_left ON merge_ledger(left_source, left_id)",
+    "CREATE INDEX merge_ledger_right ON merge_ledger(right_source, right_id)",
+    """CREATE TRIGGER merge_ledger_is_append_only_update
 BEFORE UPDATE ON merge_ledger
 BEGIN
     SELECT RAISE(ABORT, 'merge_ledger is append-only: record a reversing entry instead');
-END;
-
-CREATE TRIGGER merge_ledger_is_append_only_delete
+END""",
+    """CREATE TRIGGER merge_ledger_is_append_only_delete
 BEFORE DELETE ON merge_ledger
 BEGIN
     SELECT RAISE(ABORT, 'merge_ledger is append-only: record a reversing entry instead');
-END;
-
-CREATE TABLE source_link (
+END""",
+    """CREATE TABLE source_link (
     source TEXT NOT NULL,
     source_id TEXT NOT NULL,
     resolved_id TEXT NOT NULL,
     linked_by_entry_id INTEGER NOT NULL REFERENCES merge_ledger(entry_id),
     PRIMARY KEY (source, source_id)
-);
+)""",
+    "CREATE INDEX source_link_resolved ON source_link(resolved_id)",
+)
 
-CREATE INDEX source_link_resolved ON source_link(resolved_id);
-"""
 
+def legacy_fingerprint(statements: str | Iterable[str] = LEGACY_SCHEMA) -> str:
+    """A stable digest of one DDL statement, or of several, whitespace-insensitive.
 
-def legacy_fingerprint(statements: str = LEGACY_SCHEMA) -> str:
-    """A stable digest of the legacy DDL, whitespace-insensitive.
-
-    The guard compares this against the schema SQLite actually reports, so a migration that alters a
-    legacy table fails a test rather than being noticed later by whoever owns the source system.
+    The guard compares this against the schema SQLite actually reports, so a migration that
+    alters a legacy table fails a test rather than being noticed later by whoever owns the
+    source system.
     """
-    normalised = " ".join(statements.split()).lower()
+    text = statements if isinstance(statements, str) else "\n".join(statements)
+    normalised = " ".join(text.split()).lower()
     return hashlib.sha256(normalised.encode()).hexdigest()[:32]
 
 

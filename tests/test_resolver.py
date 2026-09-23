@@ -118,6 +118,7 @@ def test_candidate_generation_yields_each_unordered_pair_once() -> None:
     pairs = list(candidate_pairs(records))
     seen = {frozenset((left.key, right.key)) for left, right, _ in pairs}
 
+    assert pairs, "zero candidates makes the equality below `0 == 0` and proves nothing"
     assert len(pairs) == len(seen)
 
 
@@ -231,6 +232,12 @@ def test_every_feature_reports_a_value_a_weight_and_a_sentence() -> None:
         "address_similarity",
     }
     assert all(0.0 <= c.value <= 1.0 and c.detail for c in contributions)
+    # The third property the name promises, and the one the first version forgot to check: a
+    # feature carrying weight 0.0 would have passed while contributing nothing to any decision.
+    assert all(c.weight > 0 for c in contributions)
+    assert sum(c.weight for c in contributions) == pytest.approx(1.0, abs=1e-9), (
+        "the weights are a distribution; one drifting is a silent change to every score"
+    )
 
 
 def test_a_missing_country_is_not_a_disagreement() -> None:

@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-23T21:04:53+00:00",
+ "generated_at": "2026-09-23T22:13:53+00:00",
  "corpus_revision": "2026-09-23T08:00:00Z",
  "thresholds": {
   "match": null,
@@ -8,16 +8,19 @@
  "candidate_generation": {
   "records": 10424,
   "true_pairs": 5266,
-  "surfaced": 4857,
-  "recall": 0.9223,
+  "surfaced": 4812,
+  "recall": 0.9138,
+  "share_a_blocking_key": 4857,
+  "recall_if_block_size_were_unbounded": 0.9223,
+  "dropped_by_block_size_ceiling": 45,
   "candidates_generated": 243336,
   "all_possible_pairs": 54324676,
   "reduction_ratio": 0.995521,
   "candidates_per_record": 23.34,
   "recovered_by_key_family": {
-   "nameprefix": 3940,
+   "nameprefix": 3914,
    "token": 3608,
-   "postal": 2797,
+   "postal": 2776,
    "acronym": 2580,
    "regid": 2062
   },
@@ -25,130 +28,156 @@
    {
     "pair_id": "001825f066faeae6",
     "left": "TPI TRAVEL PROFESSIONALS INTERNATIONAL",
-    "right": "I.A.S. - Independent Agency Services Corp."
+    "right": "I.A.S. - Independent Agency Services Corp.",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "003ff46ec7b1587c",
     "left": "CIMPOR TRADING E INVERSIONES SA",
-    "right": "INTERCEMENT TRADING E INVERSIONES SA"
+    "right": "INTERCEMENT TRADING E INVERSIONES SA",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "00c262b55a350289",
     "left": "AR Alternative Income Fund Segregated Portfolio Fund",
-    "right": "ARIA Real Asset Income Fund Segregated Portfolio"
+    "right": "ARIA Real Asset Income Fund Segregated Portfolio",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "019039084609b8e9",
     "left": "Spirit TS Rome NY, LLC",
-    "right": "Cole TS Rome NY, LLC"
+    "right": "Cole TS Rome NY, LLC",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0214163d9aedd182",
     "left": "Maja Center GmbH",
-    "right": "Dahlke Family Holding GmbH"
+    "right": "Dahlke Family Holding GmbH",
+    "why": "the two records share no blocking key"
+   },
+   {
+    "pair_id": "0250898ebb792b54",
+    "left": "Neuberger Berman Advisers Management Trust - U.S. Equity Index PutWrite Strategy Portfolio",
+    "right": "U.S. Equity Index PutWrite Strategy Portfolio",
+    "why": "every shared key is in a block over MAX_BLOCK_SIZE"
    },
    {
     "pair_id": "0313500b7ee870b0",
     "left": "MAM",
-    "right": "SC MAM"
+    "right": "SC MAM",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "04746746489595d0",
     "left": "BT Bayern Treuhand Management & Technologie GmbH",
-    "right": "BTMT GmbH"
+    "right": "BTMT GmbH",
+    "why": "the two records share no blocking key"
+   },
+   {
+    "pair_id": "0650682269dbf842",
+    "left": "Nuveen Investment Trust V - Nuveen Preferred Securities Fund",
+    "right": "Nuveen Preferred Securities and Income Fund",
+    "why": "every shared key is in a block over MAX_BLOCK_SIZE"
+   },
+   {
+    "pair_id": "079bda4314423304",
+    "left": "BlackRock Mid Cap Value Opportunities Fund of BlackRock Mid Cap Value Opportunities Series, Inc.",
+    "right": "BlackRock Mid-Cap Value Fund",
+    "why": "every shared key is in a block over MAX_BLOCK_SIZE"
    },
    {
     "pair_id": "07a483baa4167a15",
     "left": "Globalprom B.V.",
-    "right": "JHR - SGPS, LDA"
+    "right": "JHR - SGPS, LDA",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "085863883a8b73f0",
     "left": "SHINHAN BNP PARIBAS ASSET MANAGEMENT COMPANY LIMITED",
-    "right": "\uc2e0\ud55c\uc790\uc0b0\uc6b4\uc6a9(\uc8fc)"
+    "right": "\uc2e0\ud55c\uc790\uc0b0\uc6b4\uc6a9(\uc8fc)",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "08621cce76689a12",
     "left": "SCA HYGIENE PRODUCTS",
-    "right": "ESSITY BELGIUM"
+    "right": "ESSITY BELGIUM",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "08f8d5097c566ae2",
     "left": "Dongfeng Motor Group Co. Ltd.",
-    "right": "\u4e1c\u98ce\u6c7d\u8f66\u96c6\u56e2\u80a1\u4efd\u6709\u9650\u516c\u53f8"
+    "right": "\u4e1c\u98ce\u6c7d\u8f66\u96c6\u56e2\u80a1\u4efd\u6709\u9650\u516c\u53f8",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0a3eb9cb19f63cd3",
     "left": "ProMetronics UG (haftungsbeschr\u00e4nkt)",
-    "right": "ProMetronics GmbH"
+    "right": "ProMetronics GmbH",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0a7897dc6b533a39",
     "left": "THE WORSHIPFUL COMPANY OF FURNITURE MAKERS CHARITABLE FUND (INC FTBA)",
-    "right": "THE WORSHIPFUL COMPANY OF FURNITURE MAKERS' CHARITABLE FUNDS INCORPORATING THE FURNISHING TRADES BENEVOLENT ASSOCIATION"
+    "right": "THE WORSHIPFUL COMPANY OF FURNITURE MAKERS' CHARITABLE FUNDS INCORPORATING THE FURNISHING TRADES BENEVOLENT ASSOCIATION",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0b054143b67b3c38",
     "left": "Oaks Hotels & Resorts Limited",
-    "right": "MINOR HOTELS AUSTRALASIA LIMITED"
+    "right": "MINOR HOTELS AUSTRALASIA LIMITED",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0bc897ababb87163",
     "left": "Nant Health, LLC",
-    "right": "NantHealth, Inc."
+    "right": "NantHealth, Inc.",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0c02949280443080",
     "left": "BLACKROCK GOLD FUND",
-    "right": "\u30d6\u30e9\u30c3\u30af\u30ed\u30c3\u30af\u30fb\u30b4\u30fc\u30eb\u30c9\u30fb\u30d5\u30a1\u30f3\u30c9"
+    "right": "\u30d6\u30e9\u30c3\u30af\u30ed\u30c3\u30af\u30fb\u30b4\u30fc\u30eb\u30c9\u30fb\u30d5\u30a1\u30f3\u30c9",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0c2946fe81d44e0b",
     "left": "FINLAY J P E DISC SLT",
-    "right": "JOYCE PATRICIA EILEEN FINLAY SETTLEMENT"
+    "right": "JOYCE PATRICIA EILEEN FINLAY SETTLEMENT",
+    "why": "the two records share no blocking key"
+   },
+   {
+    "pair_id": "0c43e0dbcdd07be4",
+    "left": "Rydex Variable Trust - High Yield Strategy Fund",
+    "right": "High Yield Strategy Fund",
+    "why": "every shared key is in a block over MAX_BLOCK_SIZE"
    },
    {
     "pair_id": "0c8e5155b581dca1",
     "left": "\u4e2d\u56fd\u4ea4\u901a\u5efa\u8bbe\u80a1\u4efd\u6709\u9650\u516c\u53f8",
-    "right": "China Communications Construction Co. Ltd."
+    "right": "China Communications Construction Co. Ltd.",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0ca58c960a09dcb5",
     "left": "PT Toba Bara Sejahtra Tbk",
-    "right": "PT TBS Energi Utama Tbk"
+    "right": "PT TBS Energi Utama Tbk",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0ccc0964b876399a",
     "left": "Rydex ETF Trust - Guggenheim S&P Equal Weight Health Care ETF",
-    "right": "Invesco S&P 500\u00ae Equal Weight Health Care ETF"
+    "right": "Invesco S&P 500\u00ae Equal Weight Health Care ETF",
+    "why": "the two records share no blocking key"
    },
    {
     "pair_id": "0d103c2a89c6f455",
     "left": "GRIFFIN E DECD",
-    "right": "ELIZABETH GRIFFIN DECEASED"
-   },
-   {
-    "pair_id": "0df8324c136497b9",
-    "left": "M G STYLES WILL TRUST",
-    "right": "MICHAEL GEORGE STYLES DECEASED TRUST"
-   },
-   {
-    "pair_id": "0efcd325a3e12401",
-    "left": "Fullerton Fund - Fullerton Dynamic Strategies Fund - Aggressive",
-    "right": "Fullerton Total Return Multi-Asset Advantage"
-   },
-   {
-    "pair_id": "0f2399e98ab66dce",
-    "left": "THE H B G DALGETY'S GRANDCHILDREN'S SETTLEMENT",
-    "right": "THE NEXT GENERATION SETTLEMENT"
-   },
-   {
-    "pair_id": "10e6b9534a54ad76",
-    "left": "Bond Core Plus Fund of the American Bar Association Members / MTC Collective Trust",
-    "right": "Bond Core Plus Fund"
+    "right": "ELIZABETH GRIFFIN DECEASED",
+    "why": "the two records share no blocking key"
    }
   ],
-  "note": "Recall here caps every downstream number: a true pair blocking never surfaces cannot be recovered by any scorer. Reduction ratio is beside it because recall alone is maximised by blocking on nothing."
+  "note": "Recall here caps every downstream number: a true pair blocking never surfaces cannot be recovered by any scorer. It is measured against the pairs candidate_pairs actually emits, not against whether the two records share a key -- the block-size ceiling makes those different questions. Reduction ratio is beside it because recall alone is maximised by blocking on nothing.",
+  "population_note": "Every record here participates in an adjudicated duplicate, because the corpus is built from GLEIF's DUPLICATE records and their successors. The reduction ratio is therefore measured over a pool already filtered to duplicates and is not the ratio the same blocking would achieve over a counterparty master."
  },
  "development": {
   "pairs": 10532,
@@ -430,5 +459,78 @@
    "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
   },
   "note": "Scored once, after the split was committed. ADR-001 fixes that no rule, threshold, feature or normalisation changes on the basis of this number."
+ },
+ "prior_sensitivity": {
+  "note": "Token and identifier document frequency are computed over every record in the corpus, both splits. No label is involved, so this is not label leakage -- but it is information from the held-out records reaching their own scoring, and the development_only_priors arm is what the numbers are without it. That arm is the conservative one and is the one the README quotes as the floor.",
+  "arms": {
+   "corpus_wide_priors": {
+    "development": {
+     "true_positives": 3032,
+     "false_positives": 6,
+     "true_negatives": 3838,
+     "false_negatives": 1421,
+     "review_on_positive": 813,
+     "review_on_negative": 1422,
+     "pairs": 10532,
+     "decided": 8297,
+     "precision": 0.998,
+     "recall": 0.5758,
+     "f1": 0.7303,
+     "review_rate": 0.2122,
+     "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+     "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+    },
+    "holdout": {
+     "true_positives": 712,
+     "false_positives": 1,
+     "true_negatives": 1145,
+     "false_negatives": 310,
+     "review_on_positive": 204,
+     "review_on_negative": 80,
+     "pairs": 2452,
+     "decided": 2168,
+     "precision": 0.9986,
+     "recall": 0.5808,
+     "f1": 0.7344,
+     "review_rate": 0.1158,
+     "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+     "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+    }
+   },
+   "development_only_priors": {
+    "development": {
+     "true_positives": 3032,
+     "false_positives": 7,
+     "true_negatives": 3837,
+     "false_negatives": 1421,
+     "review_on_positive": 813,
+     "review_on_negative": 1422,
+     "pairs": 10532,
+     "decided": 8297,
+     "precision": 0.9977,
+     "recall": 0.5758,
+     "f1": 0.7302,
+     "review_rate": 0.2122,
+     "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+     "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+    },
+    "holdout": {
+     "true_positives": 712,
+     "false_positives": 2,
+     "true_negatives": 1144,
+     "false_negatives": 310,
+     "review_on_positive": 204,
+     "review_on_negative": 80,
+     "pairs": 2452,
+     "decided": 2168,
+     "precision": 0.9972,
+     "recall": 0.5808,
+     "f1": 0.734,
+     "review_rate": 0.1158,
+     "precision_definition": "TP / (TP + FP), over decisions actually made; REVIEW excluded",
+     "recall_definition": "TP / (TP + FN + REVIEW-on-positive); a pair sent to REVIEW is not a recall success"
+    }
+   }
+  }
  }
 }

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import Any
 
 from counterparty_resolver.domain import CounterpartyRecord
-from counterparty_resolver.store.migrations import migrate
+from counterparty_resolver.store.migrations import migrate, run
 from counterparty_resolver.store.schema import (
     COMPANIES_HOUSE_PREVIOUS_NAME_COLUMNS,
     LEGACY_SCHEMA,
@@ -50,8 +50,13 @@ _UNPIVOT = "\nUNION ALL\n".join(
 )
 
 #: Additive by construction: views read the legacy tables and cannot alter them.
-CROSSWALK_VIEWS = f"""
-CREATE VIEW counterparty_record AS
+#: Additive by construction: views read the legacy tables and cannot alter them.
+#:
+#: A tuple, like every other DDL in this package, so `migrations.run` can execute the three
+#: statements inside one transaction. As a single script a half-applied failure left the tables
+#: created and the views missing, and `connect` then skipped creation forever after.
+CROSSWALK_VIEWS: tuple[str, ...] = (
+    f"""CREATE VIEW counterparty_record AS
     SELECT 'gleif'           AS source,
            lei               AS source_id,
            legal_name        AS legal_name,
@@ -72,17 +77,15 @@ CREATE VIEW counterparty_record AS
            address_line_1    AS address_line,
            '{COMPANIES_HOUSE_AUTHORITY}' AS registration_authority,
            company_number    AS registered_as
-      FROM legacy_companies_house;
-
-CREATE VIEW counterparty_other_name AS
+      FROM legacy_companies_house""",
+    f"""CREATE VIEW counterparty_other_name AS
     SELECT 'gleif' AS source, lei AS source_id, name AS name, 0 AS ordinal
       FROM legacy_gleif_other_name
     UNION ALL
     SELECT 'companies_house' AS source, source_id, name, ordinal FROM (
 {_UNPIVOT}
-    );
-
-CREATE VIEW crosswalk AS
+    )""",
+    f"""CREATE VIEW crosswalk AS
     SELECT g.lei                AS lei,
            c.company_number     AS company_number,
            g.legal_name         AS gleif_name,
@@ -90,8 +93,8 @@ CREATE VIEW crosswalk AS
       FROM legacy_gleif g
       JOIN legacy_companies_house c
         ON g.registered_at = '{COMPANIES_HOUSE_AUTHORITY}'
-       AND g.registered_as = c.company_number;
-"""
+       AND g.registered_as = c.company_number""",
+)
 
 
 def connect(
@@ -111,14 +114,19 @@ def connect(
     """
     connection = sqlite3.connect(path, check_same_thread=check_same_thread)
     connection.execute("PRAGMA foreign_keys = ON")
-    existing = connection.execute(
-        "SELECT name FROM sqlite_master WHERE type='table' AND name='legacy_gleif'"
-    ).fetchone()
-    if existing is None:
-        with connection:
-            connection.executescript(LEGACY_SCHEMA)
-            connection.executescript(CROSSWALK_VIEWS)
+    fresh = (
+        connection.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='legacy_gleif'"
+        ).fetchone()
+        is None
+    )
+    if fresh:
+        # One transaction over both, because a half-created schema is the worst of the three
+        # outcomes: `connect` would skip creation on every later call and the views would never
+        # exist, with nothing to say why.
+        run(connection, (*LEGACY_SCHEMA, *CROSSWALK_VIEWS))
     migrate(connection, target=target)
+    connection.execute("PRAGMA foreign_keys = ON")
     return connection
 
 

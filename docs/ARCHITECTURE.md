@@ -34,7 +34,7 @@ crosswalk. A migration that names a legacy table is refused before it runs.
                              ▼
               ┌─────────────────────────────┐
               │  blocking  (5 key families) │  nameprefix · acronym · regid · token · postal
-              │  MAX_BLOCK_SIZE = 200       │  recall 0.9223 · reduction 0.995521
+              │  MAX_BLOCK_SIZE = 200       │  recall 0.9138 · reduction 0.995521
               └──────────────┬──────────────┘   ── caps everything downstream ──
                              ▼
               ┌─────────────────────────────┐
@@ -119,9 +119,9 @@ Postgres where files suffice. What SQLite does *not* do here is scale writers, a
 design depends on it not needing to: the ledger's guarantees — append-only, idempotent on a unique
 key, reversible — are schema-level and port to Postgres unchanged.
 
-**No Redis.** Blocking keys are computed, not cached; the candidate set for 12,853 records is
-243,336 pairs and takes seconds. A cache would be a component with an invalidation story and no
-measured problem to solve.
+**No Redis.** Blocking keys are computed, not cached; the candidate set for the development split's
+10,424 records is 243,336 pairs and takes seconds. A cache would be a component with an invalidation
+story and no measured problem to solve.
 
 ## The evidence, and the order it was produced in
 
@@ -134,6 +134,15 @@ Reproducible from the repository, and the order is visible in `git log`:
 | `549ab39` | the decision rules and a development-only evaluation — **no `holdout` key in the artifact** |
 | `b67b83e` | the hold-out, scored once |
 
-Nothing after `549ab39` changes a rule. That is checkable rather than promised: the artifact
-committed at `549ab39` has no hold-out result in it, so no rule written before it can have been
-chosen with one in hand.
+Nothing after `549ab39` changes a rule. That is checkable rather than promised, and the check is per
+file rather than over the whole tree — `store/` and `api/` were both built afterwards:
+
+```
+git log -1 --format=%h -- src/counterparty_resolver/normalize.py   # 549ab39
+git log -1 --format=%h -- src/counterparty_resolver/blocking.py    # bb02786
+git log -1 --format=%h -- src/counterparty_resolver/features.py    # 549ab39
+git log -1 --format=%h -- src/counterparty_resolver/resolve.py     # 549ab39
+```
+
+All four are at or before `549ab39`, and the artifact committed there has no hold-out result in it —
+so no rule can have been chosen with one in hand.

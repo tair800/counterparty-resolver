@@ -8,7 +8,8 @@ the 19 MB corpus at boot -- costs several seconds on a free-tier container for n
 inventing demo data would put names on screen that no registrar ever adjudicated.
 
 **Development pairs only.** The hold-out was scored once at `b67b83e` and nothing may look at it
-again, including a console. Drawn from `development_pair_ids`, and `test_demo.py` asserts it.
+again, including a console. Drawn from `development_pair_ids`, and
+`tests/test_api.py::test_the_console_never_sees_a_held_out_pair` asserts it.
 """
 
 from __future__ import annotations

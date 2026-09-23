@@ -31,7 +31,7 @@
   <div class="meta" style="margin-top:8px">
     {{ entry.left_source }}:{{ entry.left_id }} + {{ entry.right_source }}:{{ entry.right_id }}
     → <strong>{{ entry.resolved_id }}</strong>
-    {%- if entry.score %} · score {{ '%.4f'|format(entry.score) }}{% endif %}
+    {%- if entry.score is not none %} · score {{ '%.4f'|format(entry.score) }}{% endif %}
   </div>
   {% if entry.action == 'merge' %}
   <form class="inline" method="post" action="/ledger/{{ entry.entry_id }}/unmerge"

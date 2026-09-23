@@ -289,9 +289,14 @@ def _review_point(
 def candidate_generation_report(pairs: list[CandidatePair]) -> dict[str, Any]:
     """Does blocking surface the pairs a registrar says are the same entity?
 
-    The number that caps everything else. Measured by asking, for every *positive* pair, whether the
-    two records share at least one blocking key -- which is precisely the question "would this pair
-    ever have reached the scorer".
+    The number that caps everything else. Measured against **the pairs `candidate_pairs` actually
+    emits**, which is the question that matters: would this pair ever have reached the scorer.
+
+    It used to ask whether the two records share a blocking key, and that is a different and more
+    flattering question. `blocking.py` skips any block larger than `MAX_BLOCK_SIZE`, so 45
+    adjudicated duplicates shared a key and were still never generated -- counted as surfaced by a
+    measurement the pipeline does not honour. Published recall fell from 0.9223 to 0.9138 when this
+    was corrected, which is the real number and still clears the predeclared 0.90 floor.
 
     ``reduction_ratio`` is reported beside it because recall alone is trivially maximised by
     blocking on nothing: a candidate set of every possible pair has perfect recall and is useless.
@@ -302,13 +307,21 @@ def candidate_generation_report(pairs: list[CandidatePair]) -> dict[str, Any]:
         records[pair.right.key] = pair.right
 
     positives = [p for p in pairs if p.label == "match"]
+    emitted: set[frozenset[str]] = set()
+    generated = 0
+    for left, right, _ in candidate_pairs(records.values()):
+        emitted.add(frozenset((left.key, right.key)))
+        generated += 1
+
     surfaced = 0
+    shares_a_key = 0
     by_key_family: dict[str, int] = {}
     missed: list[dict[str, str]] = []
 
     for pair in positives:
         shared = set(blocking_keys(pair.left)) & set(blocking_keys(pair.right))
-        if shared:
+        shares_a_key += bool(shared)
+        if frozenset((pair.left.key, pair.right.key)) in emitted:
             surfaced += 1
             for key in shared:
                 family = key.split(":", 1)[0]
@@ -319,18 +332,30 @@ def candidate_generation_report(pairs: list[CandidatePair]) -> dict[str, Any]:
                     "pair_id": pair.pair_id,
                     "left": pair.left.legal_name,
                     "right": pair.right.legal_name,
+                    "why": (
+                        "every shared key is in a block over MAX_BLOCK_SIZE"
+                        if shared
+                        else "the two records share no blocking key"
+                    ),
                 }
             )
 
     n = len(records)
     all_possible = n * (n - 1) // 2
-    generated = sum(1 for _ in candidate_pairs(records.values()))
 
     return {
         "records": n,
         "true_pairs": len(positives),
         "surfaced": surfaced,
         "recall": round(surfaced / len(positives), 4) if positives else 0.0,
+        # Reported beside it because the difference is the block-size ceiling, and a reader
+        # comparing this repository against one that publishes the looser number should be able
+        # to see both.
+        "share_a_blocking_key": shares_a_key,
+        "recall_if_block_size_were_unbounded": (
+            round(shares_a_key / len(positives), 4) if positives else 0.0
+        ),
+        "dropped_by_block_size_ceiling": shares_a_key - surfaced,
         "candidates_generated": generated,
         "all_possible_pairs": all_possible,
         "reduction_ratio": round(1 - generated / all_possible, 6) if all_possible else 0.0,
@@ -339,7 +364,15 @@ def candidate_generation_report(pairs: list[CandidatePair]) -> dict[str, Any]:
         "examples_not_surfaced": missed,
         "note": (
             "Recall here caps every downstream number: a true pair blocking never surfaces "
-            "cannot be recovered by any scorer. Reduction ratio is beside it because recall alone "
-            "is maximised by blocking on nothing."
+            "cannot be recovered by any scorer. It is measured against the pairs candidate_pairs "
+            "actually emits, not against whether the two records share a key -- the block-size "
+            "ceiling makes those different questions. Reduction ratio is beside it because recall "
+            "alone is maximised by blocking on nothing."
+        ),
+        "population_note": (
+            "Every record here participates in an adjudicated duplicate, because the corpus is "
+            "built from GLEIF's DUPLICATE records and their successors. The reduction ratio is "
+            "therefore measured over a pool already filtered to duplicates and is not the ratio "
+            "the same blocking would achieve over a counterparty master."
         ),
     }

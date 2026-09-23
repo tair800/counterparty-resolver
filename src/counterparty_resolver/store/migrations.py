@@ -27,9 +27,11 @@ database by being written carefully.
 
 from __future__ import annotations
 
+import contextlib
 import datetime as dt
 import re
 import sqlite3
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
@@ -45,6 +47,7 @@ __all__ = [
     "current_version",
     "migrate",
     "statements_touching_legacy_tables",
+    "transaction",
 ]
 
 Phase = Literal["baseline", "expand", "transition", "contract"]
@@ -54,19 +57,59 @@ class MigrationRefusedError(RuntimeError):
     """A migration declined to run because applying it would lose or corrupt information."""
 
 
+@contextlib.contextmanager
+def transaction(connection: sqlite3.Connection) -> Iterator[None]:
+    """One real transaction, DDL included, that rolls back as a unit.
+
+    **`executescript` is not this, and the difference destroyed a guarantee.** It issues a
+    COMMIT before it runs and then lets each statement in the script autocommit, so a script
+    that fails part way leaves the database in whatever state it reached — and wrapping it in
+    `with connection:` changes nothing. Migration 3 drops the append-only trigger, backfills,
+    and recreates the trigger; under `executescript`, a failure or a process kill between the
+    first and the last statement left the ledger **permanently mutable**, `schema_version`
+    still reading 2, and the migration unable to re-run because the trigger it drops was gone.
+    A rolling deploy restart is exactly when that happens.
+
+    So: `isolation_level = None` to stop the driver managing transactions, then an explicit
+    `BEGIN IMMEDIATE`. SQLite has transactional DDL; Python's driver is what was in the way.
+    """
+    previous = connection.isolation_level
+    connection.isolation_level = None
+    connection.execute("BEGIN IMMEDIATE")
+    try:
+        yield
+    except BaseException:
+        connection.execute("ROLLBACK")
+        raise
+    else:
+        connection.execute("COMMIT")
+    finally:
+        connection.isolation_level = previous
+
+
+def run(connection: sqlite3.Connection, statements: Iterable[str]) -> None:
+    """Every statement, one at a time, inside one transaction."""
+    with transaction(connection):
+        for statement in statements:
+            connection.execute(statement)
+
+
 @dataclass(frozen=True)
 class Migration:
     """One numbered step, its phase in the expand/contract sequence, and its SQL.
 
-    `precondition` is a query that must return a single zero before `statements` run. It is what
-    turns "contract after the backfill" from a comment into a refusal: the contract step below asks
-    how many rows still have no `approver_id`, and aborts on any.
+    `precondition` is a query that must return a single zero before `statements` run. It is
+    what turns "contract after the backfill" from a comment into a refusal: the contract step
+    below asks how many rows still have no `approver_id`, and aborts on any.
+
+    `statements` is a **tuple**, not a script, so `migrate` can run them one at a time inside
+    one transaction. See `transaction` for what that cost before it was fixed.
     """
 
     version: int
     phase: Phase
     description: str
-    statements: str
+    statements: tuple[str, ...]
     precondition: str | None = None
     precondition_message: str = ""
 
@@ -87,34 +130,37 @@ MIGRATIONS: tuple[Migration, ...] = (
         version=2,
         phase="expand",
         description="add merge_ledger.approver_id, nullable, alongside approved_by",
-        statements="ALTER TABLE merge_ledger ADD COLUMN approver_id TEXT;",
+        statements=("ALTER TABLE merge_ledger ADD COLUMN approver_id TEXT",),
     ),
     Migration(
         version=3,
         phase="transition",
         description="backfill approver_id from approved_by for rows written before the expand",
-        # The ledger's append-only triggers refuse UPDATE, which is correct and is also exactly the
-        # problem every backfill on an immutable table has. Dropping the trigger for the duration
-        # is the honest answer: the ledger's immutability is a property of the *running system*, and
-        # a migration is the one moment the system is not running. It is restored in the same
-        # transaction, so a failure rolls back to a ledger that still refuses writes.
-        statements="""
-        DROP TRIGGER merge_ledger_is_append_only_update;
-        UPDATE merge_ledger
-           SET approver_id = lower(replace(approved_by, ' ', '.'))
-         WHERE approver_id IS NULL;
-        CREATE TRIGGER merge_ledger_is_append_only_update
+        # The ledger's append-only triggers refuse UPDATE, which is correct and is also exactly
+        # the problem every backfill on an immutable table has. Dropping the trigger for the
+        # duration is the honest answer: the ledger's immutability is a property of the
+        # *running system*, and a migration is the one moment the system is not running.
+        #
+        # It is restored **in the same transaction**, which is a true statement only because
+        # `transaction()` exists. Under the `executescript` this used to use, it was not: the
+        # DROP committed on its own and a failure two statements later left the ledger mutable
+        # for good. The claim and the mechanism now agree.
+        statements=(
+            "DROP TRIGGER merge_ledger_is_append_only_update",
+            "UPDATE merge_ledger SET approver_id = lower(replace(approved_by, ' ', '.')) "
+            "WHERE approver_id IS NULL",
+            """CREATE TRIGGER merge_ledger_is_append_only_update
         BEFORE UPDATE ON merge_ledger
         BEGIN
             SELECT RAISE(ABORT, 'merge_ledger is append-only: record a reversing entry instead');
-        END;
-        """,
+        END""",
+        ),
     ),
     Migration(
         version=4,
         phase="contract",
         description="drop merge_ledger.approved_by now that nothing reads it",
-        statements="ALTER TABLE merge_ledger DROP COLUMN approved_by;",
+        statements=("ALTER TABLE merge_ledger DROP COLUMN approved_by",),
         precondition="SELECT COUNT(*) FROM merge_ledger WHERE approver_id IS NULL",
         precondition_message=(
             "rows still have no approver_id: the backfill in version 3 has not finished, and "
@@ -131,34 +177,52 @@ MIGRATIONS: tuple[Migration, ...] = (
         # -- while `README.md` advertised an unmerge that restores the exact prior state. The column
         # is what makes that sentence true. Rows written before it exists read as NULL, which the
         # ledger treats as "displaced nothing", and that is the correct reading of them.
-        statements="ALTER TABLE merge_ledger ADD COLUMN displaced_links_json TEXT;",
+        statements=("ALTER TABLE merge_ledger ADD COLUMN displaced_links_json TEXT",),
     ),
 )
 
-#: Words that change a table rather than read it. A migration naming a legacy table in one of these
-#: is altering a source system's schema, which the brownfield constraint forbids.
-_DDL = re.compile(
-    r"\b(alter|drop|truncate)\s+(?:table|index|trigger|view)?\s*(?:if\s+exists\s+)?"
-    r"[\"'`\[]?(\w+)",
+#: Statements that only read. Anything else naming a legacy table is modifying a source
+#: system, whether it changes the schema or the rows.
+#:
+#: An earlier version matched on the *verb* and captured the first word after it, which had two
+#: holes: `ALTER TABLE main.legacy_gleif` captured `main` and slipped through, and
+#: `DELETE FROM legacy_gleif` was not matched at all because DML was not in the verb list. The
+#: brownfield constraint is about the source systems' data as much as their shape, so the check
+#: is now anchored on the table names instead: if a statement is not read-only and names one of
+#: them, it is refused.
+#:
+#: `CREATE VIEW` counts as read-only, because a view over a legacy table is how the brownfield
+#: constraint is *satisfied* -- `crosswalk.py` is nothing else. `CREATE TRIGGER` deliberately
+#: does not: a trigger on a source system's table is code running inside somebody else's schema.
+_READ_ONLY = re.compile(
+    r"^\s*(?:with\b|select\b|pragma\b|explain\b|create\s+view\b)",
     re.IGNORECASE,
 )
-_CREATE_ON = re.compile(
-    r"\bcreate\s+(?:unique\s+)?(?:index|trigger)\b.*?\bon\s+[\"'`\[]?(\w+)", re.I
-)
 
 
-def statements_touching_legacy_tables(sql: str) -> list[str]:
-    """Legacy tables this SQL would modify, if any.
+def statements_touching_legacy_tables(sql: str | Iterable[str]) -> list[str]:
+    """Statements here that would modify a legacy table, if any.
 
-    Deliberately blunt: it looks for the verbs that change a schema and the table each one names. It
-    will not catch SQL assembled at runtime, which is why `migrate` also refuses at execution time
-    and why `MIGRATIONS` is a committed constant rather than a directory scanned at import.
+    A statement is allowed to *name* a legacy table as much as it likes as long as it only
+    reads: the crosswalk views do exactly that, and they are the mechanism the constraint is
+    satisfied by. Anything else naming one is refused, schema change or row change alike.
+
+    It will not catch SQL assembled at runtime, which is why `migrate` refuses at execution
+    time as well and why `MIGRATIONS` is a committed constant rather than a scanned directory.
     """
+    statements = [sql] if isinstance(sql, str) else list(sql)
     hits: list[str] = []
-    for match in (*_DDL.finditer(sql), *_CREATE_ON.finditer(sql)):
-        table = match.group(match.lastindex or 1)
-        if table and table.lower() in LEGACY_TABLES:
-            hits.append(match.group(0).strip())
+    for statement in statements:
+        if _READ_ONLY.match(statement):
+            continue
+        named = [
+            table
+            for table in LEGACY_TABLES
+            if re.search(rf"\b{re.escape(table)}\b", statement, re.IGNORECASE)
+        ]
+        if named:
+            first_line = statement.strip().splitlines()[0]
+            hits.append(f"{first_line.strip()} (names {', '.join(named)})")
     return hits
 
 
@@ -213,8 +277,11 @@ def migrate(
                     f"{blocked} {migration.precondition_message}"
                 )
 
-        with connection:
-            connection.executescript(migration.statements)
+        # The version row is written **inside the same transaction as the DDL**, so a failure
+        # cannot leave the schema ahead of, or behind, what `schema_version` claims.
+        with transaction(connection):
+            for statement in migration.statements:
+                connection.execute(statement)
             connection.execute(
                 "INSERT INTO schema_version (version, applied_at, phase, description) "
                 "VALUES (?, ?, ?, ?)",

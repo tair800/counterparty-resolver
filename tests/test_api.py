@@ -65,7 +65,11 @@ def test_the_pair_screen_shows_every_feature_and_what_it_contributed(
 
     for feature in ("name similarity", "distinctive token agreement", "country agreement"):
         assert feature in body
-    assert "contributed" in body
+    # `contributed` alone is a static <th> and would pass against an empty table, which is exactly
+    # the class of assertion this repository plants breaches to find. Check a rendered value.
+    assert re.search(r"<td class=\"num\">0\.\d{4}</td>", body), (
+        "no contribution was rendered; the evidence table is empty"
+    )
 
 
 def test_the_evaluation_screen_publishes_the_baseline_that_beats_the_system_on_f1(
@@ -75,7 +79,14 @@ def test_the_evaluation_screen_publishes_the_baseline_that_beats_the_system_on_f
     body = read_only.get("/evaluation").text
 
     assert "identifier_first" in body
-    assert "beats it on F1" in body
+    # The sentence is now rendered from the artifact, so assert the *number* it derives rather
+    # than the prose around it -- prose is a string literal and passes whatever the data says.
+    evaluation = json.loads((ARTIFACTS / "evaluation.json").read_text(encoding="utf-8"))
+    best_f1 = max(a["f1"] for a in evaluation["development"]["baselines"].values())
+    assert f"{best_f1:.4f}" in body
+    assert best_f1 > evaluation["development"]["system"]["f1"], (
+        "the page claims a baseline beats the system on F1; the artifact has to agree"
+    )
 
 
 def test_an_unknown_pair_is_a_404_rather_than_a_blank_screen(read_only: TestClient) -> None:
@@ -150,6 +161,27 @@ def test_submitting_the_same_reversal_twice_records_it_once(writable: TestClient
 
     assert again.status_code == 303
     assert writable.get("/health").json()["ledger_entries"] == 2
+
+
+def test_the_ledger_records_the_tokens_identity(writable: TestClient) -> None:
+    """Attribution has to come from the credential, not from a header the caller chose.
+
+    An earlier version read `x-approver-id` off the request and wrote it into `approver_id`, so the
+    append-only audit trail recorded whoever the client said they were. One shared token means one
+    identity until there is real authentication, and recording that is better than recording a name
+    nobody verified.
+    """
+    pair_id = _a_pair_id(writable)
+
+    writable.post(
+        f"/pairs/{pair_id}/approve",
+        data={"token": TOKEN},
+        headers={"x-approver-id": "somebody-else"},
+        follow_redirects=False,
+    )
+
+    assert "somebody-else" not in writable.get("/ledger").text
+    assert "steward" in writable.get("/ledger").text
 
 
 # ------------------------------------------------------------------------------- the hold-out

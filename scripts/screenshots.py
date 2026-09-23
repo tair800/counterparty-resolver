@@ -117,8 +117,14 @@ def main() -> int:
                 context.close()
             browser.close()
     finally:
+        # `wait` raising from a `finally` would discard whatever went wrong above it and leave a
+        # uvicorn process holding the port, so the timeout is handled rather than propagated.
         server.terminate()
-        server.wait(timeout=10)
+        try:
+            server.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            server.kill()
+            server.wait()
     return 0
 
 

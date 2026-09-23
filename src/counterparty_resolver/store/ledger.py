@@ -12,6 +12,11 @@ payment went to the wrong counterparty needs the difference.
 returns the original entry and changes nothing. This is not defensive coding; it is the only way a
 retry after a timeout is safe, and the approval queue will retry.
 
+The check-then-insert is a race on its own — two callers can both find nothing and both insert — so
+the UNIQUE constraint is the authority and the `IntegrityError` it raises is handled rather than
+propagated: the loser re-reads and returns the winner's entry. That makes the guarantee a property
+of this module instead of a property of whatever lock the caller happens to hold.
+
 **Reversible, including source-system linkage.** `unmerge` restores `source_link` exactly as it was,
 which is the part usually missed: dropping the resolved entity is easy, and putting each source
 record back under the identifier it had before the merge is what the downstream systems actually
@@ -25,6 +30,14 @@ entity at all. Merge A with B, merge A with C, reverse the second, and A ended u
 of back with B. The displaced links are now stored on the entry that displaced them and put back by
 the entry that reverses it — which is the only way the sentence above can be true of a chain rather
 than only of a clean slate.
+
+**It writes whatever shape of the table it finds.** That is what the middle of an
+expand/contract rename actually requires, and it was missing: the writer named a fixed set of
+columns, so at migration 2 and 3 — precisely the states the sequence exists to make safe —
+every merge failed on `NOT NULL constraint failed: merge_ledger.approved_by`. The window the
+rename removes was the only window in which the shipped writer could not write. `_columns`
+reads the live table and `merge` fills `approved_by` alongside `approver_id` while it is
+there, which is the "transition" phase `migrations.py` describes.
 
 **What this module does not do.** It does not decide. `resolve.py` decides, a person approves, and
 this records. A merge arrives here with the evidence that justified it, which is stored verbatim so
@@ -54,6 +67,37 @@ class UnmergeRefusedError(RuntimeError):
 
 class LedgerEntry(dict[str, Any]):
     """One row, as a plain mapping. The ledger's shape is the schema's, not a model's."""
+
+
+def _columns(connection: sqlite3.Connection) -> frozenset[str]:
+    """The columns `merge_ledger` actually has right now.
+
+    Read per call rather than cached: a long-lived process is exactly the thing that is still
+    running when a migration lands, and a cache would make it write the shape the table had at
+    boot.
+    """
+    return frozenset(str(row[1]) for row in connection.execute("PRAGMA table_info(merge_ledger)"))
+
+
+def _insert(connection: sqlite3.Connection, values: dict[str, Any]) -> int:
+    """Insert whichever of `values` the table can hold, and return the new entry id.
+
+    Columns the table does not have yet are dropped; columns it still has and this code no longer
+    cares about are filled from their replacement. Both directions are needed, because during a
+    rolling deploy the code and the schema disagree in both directions at once.
+    """
+    present = _columns(connection)
+    if "approved_by" in present:
+        # The transition phase: the old column is still NOT NULL and the old readers still read it.
+        values = {**values, "approved_by": values["approver_id"]}
+    usable = {name: value for name, value in values.items() if name in present}
+    placeholders = ", ".join("?" * len(usable))
+    cursor = connection.execute(
+        f"INSERT INTO merge_ledger ({', '.join(usable)}) "  # noqa: S608 - keys are schema columns
+        f"VALUES ({placeholders})",
+        tuple(usable.values()),
+    )
+    return int(cursor.lastrowid or 0)
 
 
 def _row(connection: sqlite3.Connection, entry_id: int) -> LedgerEntry:
@@ -105,36 +149,43 @@ def merge(
     displaced = _links_of(connection, (left, right))
 
     stamp = (now or dt.datetime.now(tz=dt.UTC)).isoformat(timespec="seconds")
-    with connection:
-        cursor = connection.execute(
-            "INSERT INTO merge_ledger (idempotency_key, action, left_source, left_id, "
-            "right_source, right_id, resolved_id, decision, score, evidence_json, "
-            "approver_id, recorded_at, displaced_links_json) "
-            "VALUES (?, 'merge', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                idempotency_key,
-                *left,
-                *right,
-                resolved_id,
-                decision,
-                score,
-                json.dumps(evidence, sort_keys=True),
-                approver_id,
-                stamp,
-                json.dumps(displaced, sort_keys=True),
-            ),
-        )
-        entry_id = int(cursor.lastrowid or 0)
-        # `INSERT OR REPLACE` would silently discard which entry first linked a record, and that
-        # column is how `unmerge` knows what it is allowed to undo.
-        for source, source_id in (left, right):
-            connection.execute(
-                "INSERT INTO source_link (source, source_id, resolved_id, linked_by_entry_id) "
-                "VALUES (?, ?, ?, ?) ON CONFLICT(source, source_id) DO UPDATE SET "
-                "resolved_id = excluded.resolved_id, "
-                "linked_by_entry_id = excluded.linked_by_entry_id",
-                (source, source_id, resolved_id, entry_id),
+    try:
+        with connection:
+            entry_id = _insert(
+                connection,
+                {
+                    "idempotency_key": idempotency_key,
+                    "action": "merge",
+                    "left_source": left[0],
+                    "left_id": left[1],
+                    "right_source": right[0],
+                    "right_id": right[1],
+                    "resolved_id": resolved_id,
+                    "decision": decision,
+                    "score": score,
+                    "evidence_json": json.dumps(evidence, sort_keys=True),
+                    "approver_id": approver_id,
+                    "recorded_at": stamp,
+                    "displaced_links_json": json.dumps(displaced, sort_keys=True),
+                },
             )
+            # `INSERT OR REPLACE` would silently discard which entry first linked a record, and that
+            # column is how `unmerge` knows what it is allowed to undo.
+            for source, source_id in (left, right):
+                connection.execute(
+                    "INSERT INTO source_link (source, source_id, resolved_id, linked_by_entry_id) "
+                    "VALUES (?, ?, ?, ?) ON CONFLICT(source, source_id) DO UPDATE SET "
+                    "resolved_id = excluded.resolved_id, "
+                    "linked_by_entry_id = excluded.linked_by_entry_id",
+                    (source, source_id, resolved_id, entry_id),
+                )
+    except sqlite3.IntegrityError:
+        # Lost the race on `idempotency_key`. The winner's entry is the answer, which is what a
+        # retry asked for.
+        won = _existing(connection, idempotency_key)
+        if won is None:
+            raise
+        return won
 
     return _row(connection, entry_id)
 
@@ -190,23 +241,25 @@ def unmerge(
 
     stamp = (now or dt.datetime.now(tz=dt.UTC)).isoformat(timespec="seconds")
     with connection:
-        cursor = connection.execute(
-            "INSERT INTO merge_ledger (idempotency_key, action, left_source, left_id, "
-            "right_source, right_id, resolved_id, reverses_entry_id, decision, score, "
-            "evidence_json, approver_id, recorded_at) "
-            "VALUES (?, 'unmerge', ?, ?, ?, ?, ?, ?, 'no_match', NULL, ?, ?, ?)",
-            (
-                idempotency_key,
-                original["left_source"],
-                original["left_id"],
-                original["right_source"],
-                original["right_id"],
-                original["resolved_id"],
-                reverses_entry_id,
-                json.dumps([{"feature": "unmerge_reason", "detail": reason}], sort_keys=True),
-                approver_id,
-                stamp,
-            ),
+        entry_id = _insert(
+            connection,
+            {
+                "idempotency_key": idempotency_key,
+                "action": "unmerge",
+                "left_source": original["left_source"],
+                "left_id": original["left_id"],
+                "right_source": original["right_source"],
+                "right_id": original["right_id"],
+                "resolved_id": original["resolved_id"],
+                "reverses_entry_id": reverses_entry_id,
+                "decision": "no_match",
+                "score": None,
+                "evidence_json": json.dumps(
+                    [{"feature": "unmerge_reason", "detail": reason}], sort_keys=True
+                ),
+                "approver_id": approver_id,
+                "recorded_at": stamp,
+            },
         )
         # Deleting the link row is what restores the prior state *when there was no prior row*:
         # leaving one behind with a null `resolved_id` would be a different state that merely looks
@@ -218,7 +271,9 @@ def unmerge(
                 "AND linked_by_entry_id = ?",
                 (source, source_id, reverses_entry_id),
             )
-        for link in json.loads(original["displaced_links_json"] or "[]"):
+        # `.get`, because the column only exists from migration 5. A reversal of an entry
+        # written before it simply has nothing to restore, which is the correct reading.
+        for link in json.loads(dict(original).get("displaced_links_json") or "[]"):
             connection.execute(
                 "INSERT INTO source_link (source, source_id, resolved_id, linked_by_entry_id) "
                 "VALUES (?, ?, ?, ?) ON CONFLICT(source, source_id) DO UPDATE SET "
@@ -232,7 +287,7 @@ def unmerge(
                 ),
             )
 
-    return _row(connection, int(cursor.lastrowid or 0))
+    return _row(connection, entry_id)
 
 
 def _links_of(

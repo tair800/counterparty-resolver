@@ -69,6 +69,7 @@ jobs:
       # Started without CR_APPROVER_TOKEN on purpose: the assertion is that the deployed default is
       # read-only and that a write is refused with 403 rather than being merely un-clickable.
       - name: Serve, and refuse a write
+        id: serve
         run: |
           docker run -d --name console -p 8000:8000 counterparty-resolver:ci
           for _ in $(seq 1 30); do
@@ -78,7 +79,14 @@ jobs:
           curl -sf http://127.0.0.1:8000/health | tee /dev/stderr | grep -q '"writable": *false'
           curl -s -o /dev/null -w '%{http_code}' -X POST \
             -d 'token=anything' http://127.0.0.1:8000/pairs/whatever/approve | grep -qx 403
-          docker rm -f console
+
+      # Outside the step above, so a failed assertion still tears the container down and the logs
+      # are readable whichever way the run went.
+      - name: Container logs, and clean up
+        if: always()
+        run: |
+          docker logs console 2>&1 | tail -40 || true
+          docker rm -f console || true
 
   evidence:
     name: rebuild the corpus from source

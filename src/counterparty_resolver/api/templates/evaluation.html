@@ -36,9 +36,15 @@
     <td class="num"><strong>{{ dev.system.false_positives }}</strong></td>
   </tr>
 </table>
+{% set best = dev.baselines.values()|map(attribute='f1')|max %}
+{% set best_precision = dev.baselines.values()|map(attribute='precision')|max %}
 <p class="meta">
-  The system wins on precision by one false merge, six against seven, and
-  <code>identifier_first</code> beats it on F1. Both are true and both are published.
+  The system wins on precision — {{ '%.4f'|format(dev.system.precision) }} against
+  {{ '%.4f'|format(best_precision) }} — by
+  {{ dev.baselines.values()|map(attribute='false_positives')|min - dev.system.false_positives }}
+  false merge(s), and <code>identifier_first</code> beats it on F1,
+  {{ '%.4f'|format(best) }} against {{ '%.4f'|format(dev.system.f1) }}. Both are true and both are
+  published. Every figure on this page is read from <code>artifacts/evaluation.json</code>.
 </p>
 
 {% if hold %}
@@ -78,8 +84,15 @@
   <tr><th>measure</th><th class="num">value</th><th>meaning</th></tr>
   <tr>
     <td>recall</td><td class="num">{{ '%.4f'|format(cg.recall) }}</td>
-    <td class="meta">{{ cg.surfaced }} of {{ cg.true_pairs }} adjudicated duplicates share a
-      blocking key. What blocking drops, no scorer recovers.</td>
+    <td class="meta">{{ cg.surfaced }} of {{ cg.true_pairs }} adjudicated duplicates are actually
+      emitted as candidates. What blocking drops, no scorer recovers.</td>
+  </tr>
+  <tr>
+    <td>dropped by the block-size ceiling</td>
+    <td class="num">{{ cg.dropped_by_block_size_ceiling }}</td>
+    <td class="meta">Pairs that share a key and are still never generated, because every block
+      they share is over <code>MAX_BLOCK_SIZE</code>. Counting them as surfaced would report
+      {{ '%.4f'|format(cg.recall_if_block_size_were_unbounded) }}.</td>
   </tr>
   <tr>
     <td>reduction ratio</td><td class="num">{{ '%.6f'|format(cg.reduction_ratio) }}</td>
@@ -105,10 +118,13 @@
   </tr>
   {% endfor %}
 </table>
+{% set loosest = evaluation.operating_points.match_threshold_sweep[0] %}
 <p class="meta">
-  The shipped configuration is the last row: the weighted score never asserts a match. A band at
-  0.86 decided 234 pairs, 151 correctly — 0.645 precision inside the band — and a rule wrong a third
-  of the time is a queue, not an auto-merge.
+  The shipped configuration is the last row: the weighted score never asserts a match. At the
+  loosest cut-off considered, {{ '%.2f'|format(loosest.threshold_match) }}, the band costs
+  {{ loosest.false_positives - evaluation.development.system.false_positives }} extra false merges
+  to buy {{ '%.4f'|format(loosest.recall - evaluation.development.system.recall) }} extra recall,
+  and ADR-001 fixed before any of this existed that a wrong merge is the expensive error.
 </p>
 
 <h2>The REVIEW cut-off, which cannot move the numbers above</h2>
@@ -132,6 +148,6 @@
   Precision, recall and F1 are identical down the column: this cut-off only moves pairs between
   REVIEW and NO_MATCH, and both are charged the same. A knob that cannot change the headline numbers
   cannot be tuned toward the kill test. It is chosen operationally — the widest queue the
-  predeclared 25% abstention cap permits.
+  predeclared abstention cap permits, which is the bolded row.
 </p>
 {% endblock %}

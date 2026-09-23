@@ -21,6 +21,7 @@ from __future__ import annotations
 import functools
 import hmac
 import json
+import logging
 import os
 import sqlite3
 import threading
@@ -41,6 +42,13 @@ TEMPLATES = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 #: ledger that may be reset by a restart -- and a deployment that persisted approvals would need a
 #: retention answer this project has not written.
 DATABASE_PATH = os.environ.get("CR_DATABASE", ":memory:")
+
+#: One logger for the whole console. Structured in the sense that matters here -- every record
+#: carries the fields somebody answering "why was this merged" needs, rather than a sentence they
+#: have to parse. There was none at all until a review pointed out that a system arguing "the person
+#: asking why a payment went to the wrong counterparty needs the difference" was discarding every
+#: refused approval in silence.
+log = logging.getLogger("counterparty_resolver.console")
 
 
 def _load(name: str) -> dict[str, Any]:
@@ -69,9 +77,27 @@ class Console:
         self.connection = crosswalk.connect(database, check_same_thread=False)
         self._lock = threading.RLock()
         self._seed()
+        log.info(
+            "console ready",
+            extra={
+                "pairs": len(self.pairs),
+                "writable": self.writable,
+                "database": database,
+                "corpus_revision": self.demo["corpus_revision"],
+            },
+        )
 
     def _seed(self) -> None:
-        """Put the demo's records into the legacy tables, each under its own source's schema."""
+        """Put the demo's records into the legacy tables, each under its own source's schema.
+
+        Skipped when the tables already hold rows. With `CR_DATABASE` pointed at a file -- which
+        `render.yaml` and `.env.example` both invite -- the second boot re-inserted the same LEIs
+        and died on the primary key, so the service came up once and crash-looped thereafter.
+        """
+        if self.connection.execute("SELECT 1 FROM legacy_gleif LIMIT 1").fetchone() is not None:
+            log.info("legacy tables already populated; skipping seed")
+            return
+
         gleif: list[dict[str, Any]] = []
         companies_house: list[dict[str, Any]] = []
         seen: set[str] = set()
@@ -185,6 +211,7 @@ def _require_approver(request: Request, token: str = Form(default="")) -> str:
     """
     configured = os.environ.get("CR_APPROVER_TOKEN")
     if not configured:
+        log.warning("write refused: read-only demo", extra={"path": request.url.path})
         raise HTTPException(
             status_code=403,
             detail=(
@@ -192,9 +219,17 @@ def _require_approver(request: Request, token: str = Form(default="")) -> str:
                 "configured, so no approval can be recorded."
             ),
         )
-    if not hmac.compare_digest(token, configured):
+    # Bytes, not str: `compare_digest` raises TypeError on a non-ASCII `str`, which turned a wrong
+    # token containing an accented character into a 500 on an endpoint whose contract is 401.
+    if not hmac.compare_digest(token.encode(), configured.encode()):
+        log.warning("write refused: token mismatch", extra={"path": request.url.path})
         raise HTTPException(status_code=401, detail="approver token does not match")
-    return str(request.headers.get("x-approver-id") or "steward")
+    # The identity is the token's, not the caller's. An earlier version read `x-approver-id` from
+    # the request and wrote it into the ledger, so the append-only audit trail recorded whoever the
+    # client *said* they were -- an unauthenticated string in the one column whose purpose is
+    # attribution. One shared token means one identity until there is real authentication, and
+    # saying so is better than recording a name nobody verified.
+    return "steward"
 
 
 Current = Annotated[Console, Depends(_console_of)]
@@ -273,6 +308,10 @@ def create_app(*, console: Console | None = None) -> FastAPI:
         if pair is None:
             raise HTTPException(status_code=404, detail="no such pair in this console")
         console.record_merge(pair, approver)
+        log.info(
+            "merge approved",
+            extra={"pair_id": pair_id, "approver_id": approver, "score": pair["score"]},
+        )
         return RedirectResponse(url="/ledger", status_code=303)
 
     @app.post("/ledger/{entry_id}/unmerge")
@@ -288,7 +327,9 @@ def create_app(*, console: Console | None = None) -> FastAPI:
         try:
             console.record_unmerge(entry_id, approver)
         except ledger.UnmergeRefusedError as refusal:
+            log.warning("unmerge refused", extra={"entry_id": entry_id, "reason": str(refusal)})
             raise HTTPException(status_code=409, detail=str(refusal)) from refusal
+        log.info("merge reversed", extra={"entry_id": entry_id, "approver_id": approver})
         return RedirectResponse(url="/ledger", status_code=303)
 
     # --------------------------------------------------------------------------------- health

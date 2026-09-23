@@ -110,7 +110,9 @@ The project **fails** if any of these is true:
 A and B are the authoritative criterion from `PORTFOLIO_BLUEPRINT.md`. C–F are this repository's
 own, added here so they are fixed before results exist rather than after.
 
-**Every count is computed from the committed artifacts by `scripts/gate.py`, not asserted in prose.**
+**Every count is computed from the committed artifacts by `tests/test_kill_criteria.py`, not
+asserted in prose.** (Earlier drafts of this file named a `scripts/gate.py`; no such file was
+ever written, and the work is done by the test suite.)
 
 ### Where AI is allowed
 
@@ -328,5 +330,149 @@ number of genuinely ambiguous pairs put in front of it.
 ### What did not change
 
 No threshold, feature, weight, hard signal, normalisation rule or blocking key was altered after the
-table above existed. ADR-001 fixed that, and the check is `git log`: the last commit touching
-`src/` is `549ab39`, which precedes this record.
+table above existed. ADR-001 fixed that, and the check is `git log` **per decision-path file**:
+
+```
+git log -1 --format=%h -- src/counterparty_resolver/normalize.py   # 549ab39
+git log -1 --format=%h -- src/counterparty_resolver/blocking.py    # bb02786
+git log -1 --format=%h -- src/counterparty_resolver/features.py    # 549ab39
+git log -1 --format=%h -- src/counterparty_resolver/resolve.py     # 549ab39
+```
+
+An earlier version of this sentence said "the last commit touching `src/`", which is false: `store/`
+and `api/` were both written afterwards. See ADR-004.
+
+---
+
+## ADR-004 — What two independent reviews found, and what changed
+
+**Status:** accepted, 2026-09-24, after the hold-out was scored at `b67b83e`.
+
+Two read-only reviews were run against the repository at `2345e65`: one from a hiring engineer's
+perspective, one a security and correctness pass. Between them they found four false claims, two
+correctness bugs in the append-only ledger and its migrations, and three undisclosed properties of
+the corpus. This record exists because the findings are more useful published than fixed quietly —
+several of them are exactly the failure this repository spends a whole script guarding against, made
+one level up.
+
+**Nothing below changed a decision rule.** `normalize.py`, `blocking.py`, `features.py` and
+`resolve.py` are untouched since `549ab39`, which precedes the hold-out score, and every number in
+the development and hold-out tables is unchanged except candidate recall — which was measuring the
+wrong quantity, and is now measuring the right one.
+
+### Four claims that did not survive checking
+
+**"The last commit touching `src/` is `549ab39`."** False. Three later commits touch `src/`, all of
+them in `store/` and `api/`. The substantive claim holds and is now stated in the form that is
+actually true: the last commit touching the **decision path** — `normalize`, `blocking`, `features`,
+`resolve` — is `549ab39`. `git log -1 -- <file>` checks it per file, which is what the sentence now
+says.
+
+**"Candidate recall 0.9223."** Measured by asking whether two records share a blocking key.
+`blocking.py` skips any block over `MAX_BLOCK_SIZE`, so **45 adjudicated duplicates shared a key and
+were never generated** and were being counted as surfaced. The honest figure is **0.9138**, it still
+clears the predeclared 0.90 floor, and both numbers are now published — the stricter one as the
+headline, the looser one beside it as `recall_if_block_size_were_unbounded`.
+
+**"An unmerge restores the exact prior state."** True only from a clean slate. See below.
+
+**"Three adversarial cases ship failing."** They do not fail: `expect` records the resolver's current
+output, so the suite is green on all eighteen. The policy is unchanged and correct — a rule change
+against a spent hold-out would invalidate every number here — but the cases are **published as
+characterised misses**, which is what they are, and the README no longer says the suite is red.
+
+### Two real bugs in the part of this project that is its own contribution
+
+**An unmerge deleted a displaced link instead of restoring it.** Merge A with B, then merge A with C,
+then reverse the second: A ended up under no entity at all rather than back with B. The merge that
+moved A had nowhere to record where A had come from, and the chain guard only refuses reversing an
+*earlier* entry, so the newest reversal in a chain passed it and destroyed the link. Migration 5 adds
+`displaced_links_json`, `merge` records what it displaced and `unmerge` puts it back. The old test
+compared full-table snapshots and still passed, because it only ever exercised a virgin database —
+a snapshot comparison is only as strong as the state it starts from.
+
+**A failed migration could destroy the append-only trigger permanently.** Migration 3 drops the
+trigger, backfills, and recreates it, and the comment beside it claimed this was safe because it ran
+in one transaction. It did not: `executescript` issues a COMMIT before it runs and lets each
+statement autocommit, and `with connection:` does not change that. A failure — or a process kill
+during a rolling restart, which is exactly when this happens — left the ledger **permanently
+mutable**, `schema_version` still reading 2, and the migration unable to re-run because the trigger
+it drops was gone. Every DDL in the package is now a tuple of statements executed inside an explicit
+`BEGIN IMMEDIATE`, and the version row is written in the same transaction.
+
+**And the transition phase was never implemented.** `migrations.py` described a middle step where
+"new code writes both columns". No code did: `merge` named a fixed column list, `approved_by` is
+`NOT NULL`, and every merge at migration 2 or 3 failed with a constraint error. The window the
+rename exists to remove was the only window in which the shipped writer could not write. The writer
+now reads `PRAGMA table_info` and fills whatever the table has, and the test — which previously
+asserted two column *names* existed and then wrote through the *old* shape — now calls `merge` and
+`unmerge` at every step.
+
+### Three properties of the corpus that were true and undisclosed
+
+**Every record participates in an adjudicated duplicate.** Negatives are mined from the same record
+pool the positives built, which is GLEIF's `DUPLICATE` records and their successors. The resolver is
+never scored against an ordinary counterparty record, and the reduction ratio is measured over a
+pool already filtered to duplicates — so it is not the ratio the same blocking would achieve over a
+counterparty master. Now stated in the README, in `DATA_PROVENANCE.md`, and in the artifact itself.
+
+**The fuzzy baseline is selected against by the corpus that scores it.** Hard negatives are ranked by
+Jaro-Winkler over normalised names, which is precisely `fuzzy_name_only_0.90`'s decision function.
+The miner is that baseline's adversary by construction, and its 0.5936 development precision against
+0.8890 on the hold-out is that showing. Kill test F turns on `identifier_first`, which the mining
+metric does not touch, so the criterion is unaffected — but that row is not a fair measurement and is
+now labelled as one.
+
+**The corpus-wide frequency tables see the hold-out.** `distinctive_token_agreement` and the
+identifier-distinctiveness guard read document-frequency tables computed over every record in the
+corpus, held-out records included. No label is involved, so this is not label leakage — but it is
+information from the held-out records reaching their own scoring, and "there is no fitted parameter
+to overfit" was too strong. It is now **priced rather than argued about**:
+
+| | development precision | hold-out precision | hold-out false merges |
+|---|---|---|---|
+| corpus-wide priors (shipped) | 0.9980 | 0.9986 | 1 |
+| development-only priors | 0.9977 | 0.9972 | 2 |
+
+Both arms are computed by `scripts/evaluate.py` and published under `prior_sensitivity`. The
+conservative arm is the floor, and kill test F passes under either.
+
+### Security and correctness, smaller but real
+
+- **The ledger recorded an identity the caller chose.** `approver_id` was read from an
+  `x-approver-id` request header, so the append-only audit trail attributed merges to whatever the
+  client said. One shared token means one identity; it now records that, and nothing else.
+- **A non-ASCII token returned 500 instead of 401**, because `hmac.compare_digest` refuses non-ASCII
+  `str`. Compared as bytes.
+- **`CR_DATABASE` pointed at a file crash-looped after the first boot**, because seeding was
+  unconditional. `render.yaml` and `.env.example` both invite that configuration.
+- **The legacy-table guard was bypassable and blind to DML.** It matched on the verb and captured
+  the first word after it, so `ALTER TABLE main.legacy_gleif` slipped through and
+  `DELETE FROM legacy_gleif` was never examined at all. It is now anchored on the table names: any
+  statement that is not read-only and names a legacy table is refused, `CREATE VIEW` excepted
+  because that is how the constraint is satisfied.
+- **The breach harness ignored git's exit code**, so a git that failed for any reason would have let
+  it report "the working tree is unchanged" having checked nothing. `check=True` on both calls.
+- **There was no logging anywhere in `src/`.** A refused approval vanished silently, in a system
+  whose own argument is that the person asking why a payment went astray needs the record.
+- **`merge` was not internally idempotent**, only idempotent-given-the-console's-lock. It now
+  catches the UNIQUE violation and returns the winner's entry, so the guarantee belongs to the
+  module that documents it.
+
+### Five assertions that could not fail, and the breaches added for them
+
+`assert "contributed" in body` matched a static `<th>`; `assert "beats it on F1" in body` matched
+static prose; the rename test asserted column names; a feature-contract test named three properties
+and checked two; and a candidate-generation test compared `0 == 0` when nothing was generated. All
+five now assert rendered data or counted values. `scripts/plant_breaches.py` grew from 16 to **23**
+breaches, covering every fix above that has a guard.
+
+### What this says about the repository
+
+Every documentation surface in this project is a promise; every mechanism in it is enforced. The
+findings cluster almost entirely on the first kind, which is the predictable place for a repository
+that spends its effort on the second. The response is not more prose — it is
+`tests/test_published_numbers.py`, which parses the README's result tables and fails the build when
+a cell disagrees with `artifacts/evaluation.json`, and `tests/test_evaluation_method.py`, which
+asserts that the quantities being compared to ADR-001's thresholds are the quantities those
+thresholds name.

@@ -46,6 +46,19 @@ The first build drew negatives in blocking-iteration order, and every arm scored
 `artifacts/evaluation-first-construction.json` is that run, kept so the claim is readable rather
 than recalled. A corpus on which nothing can be wrong measures nothing.
 
+**The record pool is entirely duplicate-participating records, and that shapes two numbers.**
+Negatives are mined from the same records the positives were built from, which are GLEIF's
+`DUPLICATE` records and their successors. So the resolver is never scored against an ordinary
+counterparty record, and the published reduction ratio is measured over a pool already filtered to
+duplicates — it is not the ratio the same blocking would achieve over a real counterparty master.
+Precision and recall are unaffected, because those are computed pair-by-pair over labelled pairs.
+
+**The mining metric is one of the arms' decision function.** Candidates are ranked by Jaro-Winkler
+over normalised names, which is exactly what `fuzzy_name_only_0.90` decides on. That baseline is
+therefore scored by a corpus selected to defeat it, and its 0.5936 development precision against
+0.8890 on the hold-out is that effect rather than a property of the rule. `identifier_first`, which
+kill test F turns on, is unaffected — the ranking never looks at an identifier.
+
 ---
 
 ## Companies House Free Company Data — the second schema
