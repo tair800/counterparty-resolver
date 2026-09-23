@@ -48,10 +48,13 @@ def _free_port() -> int:
 def _wait_for(url: str) -> None:
     deadline = time.monotonic() + BOOT_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        with contextlib.suppress(urllib.error.URLError, ConnectionError, OSError):
-            with urllib.request.urlopen(url, timeout=1) as response:  # noqa: S310 - fixed localhost
-                if response.status == 200:
-                    return
+        with (
+            contextlib.suppress(urllib.error.URLError, ConnectionError, OSError),
+            # S310: a localhost URL this function built, not a scheme from anywhere else.
+            urllib.request.urlopen(url, timeout=1) as response,  # noqa: S310
+        ):
+            if response.status == 200:
+                return
         time.sleep(0.2)
     raise RuntimeError(f"the console did not answer at {url} within {BOOT_TIMEOUT_SECONDS}s")
 
@@ -62,7 +65,9 @@ def main() -> int:
     args = parser.parse_args()
 
     try:
-        from playwright.sync_api import sync_playwright
+        # PLC0415: imported here rather than at the top, so the rest of the repository does not
+        # depend on a dev-only package. A missing playwright prints one line; it breaks nothing.
+        from playwright.sync_api import sync_playwright  # noqa: PLC0415
     except ImportError:  # pragma: no cover - the dev extra is not installed
         print("playwright is not installed: uv sync --dev && uv run playwright install chromium")
         return 1
@@ -118,7 +123,7 @@ def main() -> int:
 
 
 def _first_pair_id(browser: object, base: str) -> str:
-    """Whichever pair the queue puts first, so the shot follows the data rather than a hard-coded id."""
+    """Whichever pair the queue puts first, so the shot follows the data, not a fixed id."""
     page = browser.new_page()  # type: ignore[attr-defined]
     page.goto(f"{base}/", wait_until="networkidle")
     href = str(page.locator("a.card").first.get_attribute("href"))
