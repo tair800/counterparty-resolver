@@ -1,0 +1,44 @@
+# Render blueprint for the public demonstration. Free tier only; no paid resource is declared.
+#
+# **What is deployed is read-only, and that is the default rather than a setting.** The console's
+# write gate reads `CR_APPROVER_TOKEN`, and this file does not set one. With no token every write
+# endpoint answers 403 and the page says so in a banner. A visitor can read every screen, follow
+# every piece of evidence, and change nothing — which is the correct shape for a public link.
+#
+# There is nothing here to spend either. No model is in the decision path, there is no external API
+# call at request time, and the four screens are served from two committed JSON artifacts. The
+# worst a visitor can do is read them.
+#
+# **No database is declared.** The console's ledger is in memory and a restart resets it. Attaching
+# a real database would create a resource nobody asked for and would need a retention answer this
+# project has not written; the merge ledger's guarantees are schema-level and port unchanged when
+# one is wanted.
+
+services:
+  - type: web
+    name: counterparty-resolver
+    runtime: docker
+    plan: free
+    region: frankfurt
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+
+    # Liveness only. `/health` reads what is already in memory and touches nothing external, so the
+    # platform's restart trigger cannot be tripped by a dependency — there is no dependency.
+    healthCheckPath: /health
+
+    envVars:
+      # Render injects PORT; declared here so the coupling is visible in the blueprint and not only
+      # in the CMD line.
+      - key: PORT
+        value: 8000
+
+      # The ledger lives in memory. Named explicitly so a reader does not have to infer it from a
+      # default, and so switching it to a path is an edit to this file rather than a surprise.
+      - key: CR_DATABASE
+        value: ":memory:"
+
+      # CR_APPROVER_TOKEN is deliberately absent. Setting one here would put a credential in a
+      # repository and would turn a public demonstration into a writable one. If the demonstration
+      # ever needs to accept approvals, the token goes in Render's dashboard as a secret, and the
+      # decision gets an ADR.
