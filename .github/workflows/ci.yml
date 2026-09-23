@@ -31,7 +31,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # Pinned exactly: setup-uv publishes no floating major tag, so `@v10` does not
+      # resolve. Found the hard way, by a red build.
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
@@ -86,7 +88,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: astral-sh/setup-uv@v10
+      # Pinned exactly: setup-uv publishes no floating major tag, so `@v10` does not
+      # resolve. Found the hard way, by a red build.
+      - uses: astral-sh/setup-uv@v10.2.0
         with:
           enable-cache: true
           cache-dependency-glob: uv.lock
