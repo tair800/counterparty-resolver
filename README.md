@@ -157,7 +157,7 @@ record of who approved that merge.
 
 ```bash
 uv sync
-uv run python -m pytest                          # 95 tests, no network
+uv run python -m pytest                          # 99 tests, no network
 uv run uvicorn counterparty_resolver.api.app:app # read-only console on :8000
 CR_APPROVER_TOKEN=$(openssl rand -hex 16) uv run uvicorn counterparty_resolver.api.app:app
 ```
