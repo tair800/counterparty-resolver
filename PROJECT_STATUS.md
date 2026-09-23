@@ -17,8 +17,8 @@ Every row below was run, not assumed. Commands are in `Makefile`.
 
 | | result |
 |---|---|
-| `make check` (ruff, ruff format, mypy --strict, pytest) | green — **131 tests**, 32 source files type-clean |
-| `make breaches` | **16 of 16 planted defects caught**, working tree restored |
+| `make check` (ruff, ruff format, mypy --strict, pytest) | green — **132 tests**, 34 files type-clean |
+| `make breaches` | **24 of 24 planted defects caught**, working tree restored |
 | Docker image builds, serves, refuses a write | 263 MB, runs as uid 10001, `/health` 200, POST without a token → 403 |
 | GitHub Actions `check` + `container` | green on `main` |
 | Console, all four screens, light and dark | captured to `docs/screenshots/` by `scripts/screenshots.py` |
@@ -37,6 +37,30 @@ Corpus: 12,984 pairs (6,492 adjudicated duplicates, 6,492 mined hard negatives),
 Split: 6,361 clusters, 1,203 held out, 0 pairs dropped for straddling.
 Candidate generation: recall 0.9223, reduction ratio 0.995521.
 
+## Two independent reviews, and what they changed
+
+Run against `2345e65`: one hiring-engineer pass, one security and correctness pass. Between them
+they found **four false claims, two real bugs in the merge ledger and its migrations, and three
+undisclosed properties of the corpus**. All of it is in `DECISIONS.md` ADR-004, and all of it is
+fixed or disclosed. The pattern is worth stating plainly: the defects were almost entirely in prose,
+and almost none in the enforced guarantees — which is the predictable failure of a repository that
+spends its effort on mechanisms and then writes sentences beside them.
+
+The three that mattered most:
+
+1. **A failed migration could permanently destroy the append-only trigger.** `executescript` commits
+   before it runs; the "same transaction" the comment claimed did not exist. All DDL now runs inside
+   an explicit `BEGIN IMMEDIATE`.
+2. **The shipped writer could not write during its own expand/contract rename** — `approved_by` is
+   `NOT NULL` and the writer named a fixed column list — and the test named for proving otherwise
+   asserted column names and then wrote through the old shape.
+3. **Published candidate recall was 0.9223 and is 0.9138.** It measured key-sharing; blocking skips
+   blocks over `MAX_BLOCK_SIZE`, so 45 pairs were counted as surfaced that are never generated.
+
+Two new suites exist because of this: `tests/test_published_numbers.py` fails the build when a cell
+in the README disagrees with the artifact, and `tests/test_evaluation_method.py` asserts that the
+quantities compared to ADR-001's thresholds are the quantities those thresholds name.
+
 ## Known issues, carried deliberately
 
 1. **`identifier_first` beats the system on F1** (0.7607 against 0.7303). The predeclared criterion
@@ -52,6 +76,17 @@ Candidate generation: recall 0.9223, reduction ratio 0.995521.
    a floor, not an estimate.
 6. **The hold-out's negatives are easier than development's** (mean name similarity 0.8147 against
    0.9037), so its absolute precision is not comparable. The development number is the one quoted.
+7. **The frequency tables are computed over both splits.** Not label leakage, but information from
+   the held-out records reaches their own scoring. Both arms are published: hold-out precision
+   0.9986 with corpus-wide priors, **0.9972 with development-only priors**, which is the floor.
+8. **`fuzzy_name_only_0.90` is scored by a corpus selected against it** — hard negatives are ranked
+   by that baseline's own decision function. Kill test F turns on `identifier_first`, which the
+   ranking never touches, so the criterion is unaffected.
+9. **Prior names are carried and never consulted.** No feature reads `other_names`, though 324 of
+   the 2,234 unmatched development positives have an exact normalised alias match against one such
+   collision in 5,266 negatives. The clearest single recall win, and it needs a new hold-out.
+10. **No `p50/p95` latency and no cost-per-operation.** Nothing here calls a model or an external
+    service at request time, so the second would be zero; the first is simply not measured.
 
 None of these is a defect to fix in this increment. Each is in `DECISIONS.md` and the README.
 
@@ -80,8 +115,10 @@ development, 36.4% of it genuine duplicates — which is the input that decision
 In order of value:
 
 1. **A second corpus, and a second hold-out.** Every limitation above is now locked by ADR-001.
-   Fixing the three adversarial misses, adding `p l` to the legal-form table, or reweighting
-   `acronym_match` all require a fresh split, and a fresh split requires a fresh corpus.
+   Using `other_names`, fixing the three adversarial misses, adding `p l` to the legal-form table or
+   reweighting `acronym_match` all require a fresh split, and a fresh split requires a fresh corpus.
+   Draw the negatives with a metric no arm decides on, and from a record pool that is not entirely
+   duplicate-participating — both are disclosed limitations a rebuild can simply remove.
 2. **The hybrid arm**, with the cost comparison the blueprint asks for. The band is measured and
    the plumbing to route it exists; what is missing is the adjudicator and the cost accounting.
 3. **Adjudicated negatives.** The precision floor is set by unadjudicated duplicates in the negative
