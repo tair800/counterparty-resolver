@@ -274,8 +274,12 @@ def main() -> int:
 
     # S607: `git` is resolved from PATH on purpose. Pinning an absolute path would make
     # this script work on one machine, and the command is a fixed argv with no shell.
-    dirty = subprocess.run(  # noqa: S607
-        ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False
+    dirty = subprocess.run(
+        ["git", "status", "--porcelain"],  # noqa: S607
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout.strip()
     if dirty:
         print(
@@ -309,8 +313,12 @@ def main() -> int:
             for line in tail:
                 print(f"             pytest said: {line}")
 
-    still_dirty = subprocess.run(  # noqa: S607
-        ["git", "status", "--porcelain"], cwd=ROOT, capture_output=True, text=True, check=False
+    still_dirty = subprocess.run(
+        ["git", "status", "--porcelain"],  # noqa: S607
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
     ).stdout.strip()
     if still_dirty:
         print("\nTHE WORKING TREE WAS NOT RESTORED. Revert it before doing anything else:")

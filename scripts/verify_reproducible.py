@@ -34,8 +34,8 @@ _EXAMPLES = 20
 def _committed(path: str, ref: str) -> dict[str, Any]:
     # S603/S607: a fixed argv with no shell, and `git` from PATH on purpose -- pinning an
     # absolute path would tie this script to one machine.
-    result = subprocess.run(  # noqa: S603, S607
-        ["git", "show", f"{ref}:{path}"],
+    result = subprocess.run(  # noqa: S603
+        ["git", "show", f"{ref}:{path}"],  # noqa: S607
         cwd=ROOT,
         capture_output=True,
         check=False,
