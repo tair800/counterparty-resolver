@@ -12,6 +12,48 @@ published beside the three baselines it has to beat, including the one that beat
 
 ---
 
+## Live demo
+
+### **<https://counterparty-resolver.onrender.com>**
+
+A portfolio demonstration, deployed on Render's free tier. Read it before you read anything else
+here: the four screens *are* the argument, and they render the committed artifacts rather than a
+copy of them.
+
+**It is read-only, and that is the default rather than a setting.** No approver token is configured
+on the deployment, so every write endpoint answers **403** — not a greyed-out button, a refused
+request. The banner at the top of each screen says so. You can follow every decision to the feature
+that produced it and change nothing.
+
+**The data is public-source and real, not synthetic.** The records on screen are genuine GLEIF legal
+entities and the labels are duplicate adjudications made by LEI Issuing Organisations — CC0 1.0,
+redistributable, and adjudicated before this project existed. Nothing here is generated to look
+convincing.
+
+Four things the demo is showing, stated plainly:
+
+- **The resolver is deterministic.** Rules over interpretable features. Every decision on the pair
+  screen is reconstructible from the table beneath it.
+- **The hold-out is genuine and frozen.** The split was committed at `bb02786`, before any rule
+  existed; it was scored once at `b67b83e`; and nothing in the decision path has changed since.
+  Development and hold-out agree to within 0.005 on every metric.
+- **System precision is very high — 0.9980 on development, 0.9986 held out** — and the margin over
+  the best baseline is **one false merge**, six against seven. That is a real result and a thin one,
+  and both halves of that sentence matter.
+- **`identifier_first`, a nine-line baseline, still has the higher F1**: 0.7607 against 0.7303. The
+  kill test was predeclared on precision and the system wins there. It does not win overall, the
+  evaluation screen says so in the same words, and nothing here is arranged to obscure it.
+
+**REVIEW exists so the system is not forced into a risky merge.** 21.2% of the development corpus is
+handed to a person instead of decided, because a wrong merge corrupts payment routing for days and a
+missed duplicate costs a duplicate. Abstention is never folded into precision, and it is charged in
+full against recall — so declining is visible rather than free.
+
+> The free instance sleeps after inactivity. The first request can take ~50 seconds to wake it;
+> everything after that is immediate.
+
+---
+
 ## The numbers
 
 Labels are **GLEIF duplicate adjudications**: an LEI Issuing Organisation recorded one LEI as the
@@ -138,8 +180,9 @@ costs 0.029 recall and removes 83 of 89 false merges. The whole sweep is publish
 
 ## The steward console
 
-Four screens, served by FastAPI. **Read-only unless `CR_APPROVER_TOKEN` is set**, and it fails
-closed: a missing token means the write endpoints return 403, not merely that a button is greyed.
+Four screens, served by FastAPI, and [live here](https://counterparty-resolver.onrender.com).
+**Read-only unless `CR_APPROVER_TOKEN` is set**, and it fails closed: a missing token means the write
+endpoints return 403, not merely that a button is greyed. The deployment sets no token.
 
 | | |
 |---|---|
@@ -151,6 +194,12 @@ closed: a missing token means the write endpoints return 403, not merely that a 
 Regenerate them with `uv run python scripts/screenshots.py`, which starts the server, drives a
 headless browser and writes both themes. A screenshot nobody can reproduce is a claim about a UI
 that may no longer exist.
+
+The images above are the **locally generated** set, and deliberately so: they reproduce on any
+machine from this repository, which a free-tier URL that sleeps after fifteen minutes does not.
+`docs/screenshots/live/` holds the same four screens captured from the deployment itself — same
+script, `--base-url https://counterparty-resolver.onrender.com` — and those are the ones that show
+the read-only banner a visitor actually gets.
 
 ---
 
@@ -266,6 +315,10 @@ Recorded so it cannot look like an omission discovered later. `PORTFOLIO_BLUEPRI
 | Live LLM adjudication of the ambiguity band | Not built. The band is measured — 21.2% of development, 36.4% of it genuine duplicates — but the second arm is not run, so no cost-per-1,000-pairs comparison is published. |
 | React steward console | Replaced by server-rendered HTML. A build step and a bundler would not make the evidence on screen more legible. |
 | PostgreSQL | SQLite. The blueprint's own constraint for this increment is no Postgres where files suffice, and the resolution layer is one process with one writer. |
+
+Deployed as a single free-tier Render web service from the committed `render.yaml` — one container,
+no database, no secret, no paid resource. The blueprint declares no `CR_APPROVER_TOKEN`, which is
+what makes the public console read-only by construction rather than by configuration.
 
 ---
 

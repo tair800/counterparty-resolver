@@ -10,6 +10,11 @@ process, and the database is in memory, so running it changes nothing on disk ex
 
 Each screen is captured twice, light and dark, because the console follows the reader's system
 theme and a README that only shows one of them is showing half the work.
+
+`--base-url` points the same capture at an already-running service instead of starting one, which is
+how `docs/screenshots/live/` is produced from the public deployment. The README's own images stay
+the locally-generated set: those reproduce on any machine from this repository, and a free-tier URL
+that sleeps after fifteen minutes does not.
 """
 
 from __future__ import annotations
@@ -45,8 +50,8 @@ def _free_port() -> int:
         return int(sock.getsockname()[1])
 
 
-def _wait_for(url: str) -> None:
-    deadline = time.monotonic() + BOOT_TIMEOUT_SECONDS
+def _wait_for(url: str, timeout: int = BOOT_TIMEOUT_SECONDS) -> None:
+    deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         with (
             contextlib.suppress(urllib.error.URLError, ConnectionError, OSError),
@@ -56,12 +61,23 @@ def _wait_for(url: str) -> None:
             if response.status == 200:
                 return
         time.sleep(0.2)
-    raise RuntimeError(f"the console did not answer at {url} within {BOOT_TIMEOUT_SECONDS}s")
+    raise RuntimeError(f"the console did not answer at {url} within {timeout}s")
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=SHOTS)
+    parser.add_argument(
+        "--base-url",
+        default=None,
+        help="capture an already-running service instead of starting one (e.g. the deployment)",
+    )
+    parser.add_argument(
+        "--timeout",
+        type=int,
+        default=BOOT_TIMEOUT_SECONDS,
+        help=("seconds to wait for /health; a free-tier cold start needs far longer than a boot"),
+    )
     args = parser.parse_args()
 
     try:
@@ -72,29 +88,39 @@ def main() -> int:
         print("playwright is not installed: uv sync --dev && uv run playwright install chromium")
         return 1
 
-    args.out.mkdir(parents=True, exist_ok=True)
-    port = _free_port()
-    base = f"http://127.0.0.1:{port}"
-    environment = dict(os.environ, CR_APPROVER_TOKEN=secrets.token_urlsafe(16))
+    # Resolved, so a relative `--out` still prints a path relative to the repository below
+    # rather than raising. A crash in the reporting line would leave the capture half done.
+    out_root = args.out.resolve()
+    out_root.mkdir(parents=True, exist_ok=True)
+    server: subprocess.Popen[bytes] | None = None
 
-    server = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
-        [
-            sys.executable,
-            "-m",
-            "uvicorn",
-            "counterparty_resolver.api.app:app",
-            "--host",
-            "127.0.0.1",
-            "--port",
-            str(port),
-            "--log-level",
-            "warning",
-        ],
-        cwd=ROOT,
-        env=environment,
-    )
+    if args.base_url:
+        base = args.base_url.rstrip("/")
+    else:
+        port = _free_port()
+        base = f"http://127.0.0.1:{port}"
+        # A token is generated for the local run so the buttons render enabled. It never leaves
+        # this process, and the deployment is captured with no token at all -- which is the point
+        # of `--base-url`: those shots show the read-only console a visitor actually gets.
+        environment = dict(os.environ, CR_APPROVER_TOKEN=secrets.token_urlsafe(16))
+        server = subprocess.Popen(  # noqa: S603 - fixed argv, no shell
+            [
+                sys.executable,
+                "-m",
+                "uvicorn",
+                "counterparty_resolver.api.app:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                str(port),
+                "--log-level",
+                "warning",
+            ],
+            cwd=ROOT,
+            env=environment,
+        )
     try:
-        _wait_for(f"{base}/health")
+        _wait_for(f"{base}/health", timeout=args.timeout)
         with sync_playwright() as playwright:
             browser = playwright.chromium.launch()
             pair_id = _first_pair_id(browser, base)
@@ -111,20 +137,22 @@ def main() -> int:
                 page = context.new_page()
                 for name, path in screens.items():
                     page.goto(f"{base}{path}", wait_until="networkidle")
-                    out = args.out / f"{name}-{scheme}.png"
+                    out = out_root / f"{name}-{scheme}.png"
                     page.screenshot(path=str(out), full_page=name != "queue")
-                    print(f"  wrote {out.relative_to(ROOT)}")
+                    shown = out.relative_to(ROOT) if out.is_relative_to(ROOT) else out
+                    print(f"  wrote {shown}")
                 context.close()
             browser.close()
     finally:
         # `wait` raising from a `finally` would discard whatever went wrong above it and leave a
         # uvicorn process holding the port, so the timeout is handled rather than propagated.
-        server.terminate()
-        try:
-            server.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            server.kill()
-            server.wait()
+        if server is not None:
+            server.terminate()
+            try:
+                server.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                server.kill()
+                server.wait()
     return 0
 
 
