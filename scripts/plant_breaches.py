@@ -158,8 +158,8 @@ BREACHES: tuple[Breach, ...] = (
         name="evaluation-screen-hides-the-corpus-size",
         guards="a visitor can see the size of the thing being scored, not only its two halves",
         path="src/counterparty_resolver/api/templates/evaluation.html",
-        find="    <td>labelled pairs</td>",
-        replace="    <td>labelled pairs</td><!--",
+        find="<td class=\"num\">{{ '{:,}'.format(corpus.pairs) }}</td>",
+        replace='<td class="num">many</td>',
         expect_failure_in=[
             "tests/test_api.py::test_the_evaluation_screen_shows_the_size_of_the_corpus_being_scored"
         ],
