@@ -11,6 +11,36 @@
   hold-out policy were all fixed before any of these numbers existed.
 </p>
 
+{% set corpus = evaluation.corpus %}
+<h2>The corpus being scored</h2>
+<table>
+  <tr><th>measure</th><th class="num">value</th><th>what it is</th></tr>
+  <tr>
+    <td>labelled pairs</td><td class="num">{{ '{:,}'.format(corpus.pairs) }}</td>
+    <td class="meta">Over {{ '{:,}'.format(corpus.distinct_records) }} distinct records, split into
+      development and hold-out over entity clusters rather than over pairs.</td>
+  </tr>
+  <tr>
+    <td>adjudicated duplicates</td><td class="num">{{ '{:,}'.format(corpus.positives) }}</td>
+    <td class="meta">Positives. An LEI Issuing Organisation recorded one LEI as the duplicate of
+      another — the labels are not ours.</td>
+  </tr>
+  <tr>
+    <td>mined hard negatives</td><td class="num">{{ '{:,}'.format(corpus.negatives) }}</td>
+    <td class="meta">Pairs blocking surfaced that no adjudication links, transitively, and among
+      the most name-similar such pairs available. Random negatives would measure nothing.</td>
+  </tr>
+  {% for source in corpus.sources %}
+  <tr>
+    <td>source</td><td class="num">{{ source.licence }}</td>
+    <td class="meta">{{ source.name }}, revision {{ source.revision }}. The raw extract is
+      {{ 'vendored' if source.vendored else 'not vendored — it is fetched and cached outside git' }};
+      the labelled pairs derived from it are committed, which the licence permits and without which
+      none of the numbers below could be checked.</td>
+  </tr>
+  {% endfor %}
+</table>
+
 <h2>Development — {{ dev.pairs }} pairs, {{ dev.positives }} positive, {{ dev.negatives }} negative</h2>
 <table>
   <tr>

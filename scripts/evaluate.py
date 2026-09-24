@@ -163,6 +163,17 @@ def main() -> int:
     report: dict[str, Any] = {
         "generated_at": dt.datetime.now(tz=dt.UTC).isoformat(timespec="seconds"),
         "corpus_revision": corpus["sources"][0]["revision"],
+        # Carried into the evaluation so the console can show the size of the thing being scored
+        # without shipping the 20 MB corpus into a container that needs three numbers from it.
+        # A verification pass against the live deployment found that a visitor could see the split
+        # -- 10,532 development and 2,452 held out -- and never the total they add up to.
+        "corpus": {
+            **corpus["counts"],
+            "sources": [
+                {k: source[k] for k in ("name", "licence", "revision", "vendored")}
+                for source in corpus["sources"]
+            ],
+        },
         "thresholds": {"match": THRESHOLD_MATCH, "no_match": THRESHOLD_NO_MATCH},
         "candidate_generation": candidate_generation_report(development),
         "development": _arm(development, frequency, total_records, identifier_frequency),

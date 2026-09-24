@@ -1,6 +1,20 @@
 {
- "generated_at": "2026-09-23T22:13:53+00:00",
+ "generated_at": "2026-09-24T06:27:20+00:00",
  "corpus_revision": "2026-09-23T08:00:00Z",
+ "corpus": {
+  "pairs": 12984,
+  "positives": 6492,
+  "negatives": 6492,
+  "distinct_records": 12853,
+  "sources": [
+   {
+    "name": "GLEIF LEI (Level 1)",
+    "licence": "CC0 1.0 Universal",
+    "revision": "2026-09-23T08:00:00Z",
+    "vendored": false
+   }
+  ]
+ },
  "thresholds": {
   "match": null,
   "no_match": 0.66

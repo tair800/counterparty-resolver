@@ -17,8 +17,8 @@ Every row below was run, not assumed. Commands are in `Makefile`.
 
 | | result |
 |---|---|
-| `make check` (ruff, ruff format, mypy --strict, pytest) | green — **132 tests**, 34 files type-clean |
-| `make breaches` | **24 of 24 planted defects caught**, working tree restored |
+| `make check` (ruff, ruff format, mypy --strict, pytest) | green — **133 tests**, 34 files type-clean |
+| `make breaches` | **25 of 25 planted defects caught**, working tree restored |
 | Docker image builds, serves, refuses a write | 263 MB, runs as uid 10001, `/health` 200, POST without a token → 403 |
 | GitHub Actions `check` + `container` | green on `main` |
 | Console, all four screens, light and dark | captured to `docs/screenshots/` by `scripts/screenshots.py` |

@@ -90,6 +90,34 @@ def test_the_evaluation_screen_publishes_the_baseline_that_beats_the_system_on_f
     )
 
 
+def test_the_evaluation_screen_shows_the_size_of_the_corpus_being_scored(
+    read_only: TestClient,
+) -> None:
+    """A visitor could see the split and never the total it adds up to.
+
+    The page rendered "10532 pairs" and "2452 pairs" and nothing that said those are two halves of
+    12,984 over 12,853 records. A verification pass against the live deployment found it; the counts
+    now travel in `evaluation.json` rather than being typed into the template, because the console
+    does not ship the 20 MB corpus it would otherwise have to read them from.
+    """
+    body = read_only.get("/evaluation").text
+    corpus = json.loads((ARTIFACTS / "evaluation.json").read_text(encoding="utf-8"))["corpus"]
+
+    for label, value in (
+        ("labelled pairs", corpus["pairs"]),
+        ("adjudicated duplicates", corpus["positives"]),
+        ("mined hard negatives", corpus["negatives"]),
+        ("distinct records", corpus["distinct_records"]),
+    ):
+        assert f"{value:,}" in body, f"{label} ({value:,}) is not on the evaluation screen"
+
+    assert corpus["pairs"] == corpus["positives"] + corpus["negatives"], (
+        "the page presents these as two halves of the total; the artifact has to agree"
+    )
+    for source in corpus["sources"]:
+        assert source["licence"] in body, f"the licence for {source['name']} is not shown"
+
+
 def test_an_unknown_pair_is_a_404_rather_than_a_blank_screen(read_only: TestClient) -> None:
     assert read_only.get("/pairs/no-such-pair").status_code == 404
 
