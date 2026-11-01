@@ -112,6 +112,16 @@ def connect(
     pool and an in-memory database cannot be reopened per request, because it *is* the state.
     The caller that passes it owns the serialisation, and `api.Console` does it with one lock.
     """
+    try:
+        return _open(path, target=target, check_same_thread=check_same_thread)
+    except sqlite3.DatabaseError as error:
+        # sqlite3 says what went wrong but not which file. The console opens whatever CR_DATABASE
+        # names, so without the path an operator is left guessing which setting to correct.
+        error.add_note(f"database: {path!s}")
+        raise
+
+
+def _open(path: Path | str, *, target: int | None, check_same_thread: bool) -> sqlite3.Connection:
     connection = sqlite3.connect(path, check_same_thread=check_same_thread)
     connection.execute("PRAGMA foreign_keys = ON")
     fresh = (
