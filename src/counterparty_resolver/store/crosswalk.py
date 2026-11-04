@@ -123,6 +123,16 @@ def connect(
 
 def _open(path: Path | str, *, target: int | None, check_same_thread: bool) -> sqlite3.Connection:
     connection = sqlite3.connect(path, check_same_thread=check_same_thread)
+    try:
+        return _prepare(connection, target=target)
+    except BaseException:
+        # The caller never receives the connection, so it cannot close it: without this, a start
+        # that fails part-way keeps the database open until the connection is garbage-collected.
+        connection.close()
+        raise
+
+
+def _prepare(connection: sqlite3.Connection, *, target: int | None) -> sqlite3.Connection:
     connection.execute("PRAGMA foreign_keys = ON")
     fresh = (
         connection.execute(
