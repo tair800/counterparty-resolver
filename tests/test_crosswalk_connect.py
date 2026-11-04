@@ -12,7 +12,7 @@ from pathlib import Path
 
 import pytest
 
-from counterparty_resolver.store import crosswalk
+from counterparty_resolver.store import crosswalk, migrations
 
 
 def test_a_database_that_cannot_be_opened_is_named(tmp_path: Path) -> None:
@@ -36,3 +36,24 @@ def test_a_database_that_opens_is_unaffected(tmp_path: Path) -> None:
         assert connection.execute("SELECT 1").fetchone() == (1,)
     finally:
         connection.close()
+
+
+@pytest.mark.parametrize(
+    "failure", [sqlite3.OperationalError, migrations.MigrationRefusedError, KeyboardInterrupt]
+)
+def test_a_failed_migration_closes_the_connection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: type[BaseException]
+) -> None:
+    """The caller never receives the connection when opening fails, so nothing else can close it."""
+    handed: list[sqlite3.Connection] = []
+
+    def failing_migrate(connection: sqlite3.Connection, *, target: int | None) -> None:
+        handed.append(connection)
+        raise failure("planted")
+
+    monkeypatch.setattr(crosswalk, "migrate", failing_migrate)
+    with pytest.raises(failure, match="planted"):
+        crosswalk.connect(tmp_path / "crosswalk.db")
+    (connection,) = handed
+    with pytest.raises(sqlite3.ProgrammingError, match="closed database"):
+        connection.execute("SELECT 1")
