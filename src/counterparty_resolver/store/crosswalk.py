@@ -164,13 +164,15 @@ def seed(
     """
     with connection:
         for row in gleif:
-            other = row.pop("other_names", [])
-            columns = ", ".join(row)
+            # Read, not popped. A rollback undoes the inserts but not a change to the caller's
+            # rows, and a retry with them would store these records without their other names.
+            fields = {column: value for column, value in row.items() if column != "other_names"}
+            columns = ", ".join(fields)
             connection.execute(
-                f"INSERT INTO legacy_gleif ({columns}) VALUES ({', '.join('?' * len(row))})",
-                tuple(row.values()),
+                f"INSERT INTO legacy_gleif ({columns}) VALUES ({', '.join('?' * len(fields))})",
+                tuple(fields.values()),
             )
-            for name_type, name in other:
+            for name_type, name in row.get("other_names", []):
                 connection.execute(
                     "INSERT INTO legacy_gleif_other_name (lei, name_type, name) VALUES (?, ?, ?)",
                     (row["lei"], name_type, name),
