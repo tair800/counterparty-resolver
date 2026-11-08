@@ -84,7 +84,7 @@
   <input type="password" name="token" placeholder="approver token"
          {% if not writable %}disabled{% endif %}>
   <button type="submit" {% if not writable %}disabled{% endif %}>Approve merge</button>
-  <a href="/"><button type="button" class="ghost">Back to the queue</button></a>
+  <a href="/" class="ghost">Back to the queue</a>
 </form>
 <p class="meta" style="margin-top:10px">
   An approval appends to the merge ledger and points both source records at one resolved entity. It
