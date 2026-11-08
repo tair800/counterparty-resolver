@@ -165,6 +165,17 @@ BREACHES: tuple[Breach, ...] = (
         ],
     ),
     Breach(
+        name="pair-page-nests-a-button-inside-a-link",
+        guards="one action offers one focusable control, and no link wraps an interactive element",
+        path="src/counterparty_resolver/api/templates/pair.html",
+        find='  <a href="/" class="ghost">Back to the queue</a>',
+        replace='  <a href="/"><button type="button" class="ghost">Back to the queue</button></a>',
+        expect_failure_in=[
+            "tests/test_pair_page_controls.py::test_no_template_puts_an_interactive_element_inside_a_link",
+            "tests/test_pair_page_controls.py::test_the_pair_page_offers_one_control_back_to_the_queue",
+        ],
+    ),
+    Breach(
         name="a-refused-write-is-not-logged",
         guards="the console records what it refused, rather than dropping it",
         path="src/counterparty_resolver/api/app.py",
